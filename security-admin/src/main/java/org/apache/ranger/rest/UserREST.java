@@ -47,18 +47,15 @@ import org.apache.ranger.db.RangerDaoManager;
 import org.apache.ranger.entity.XXPortalUser;
 import org.apache.ranger.security.context.RangerAPIList;
 import org.apache.ranger.util.RangerRestUtil;
-import org.apache.ranger.view.VXPasswordChange;
-import org.apache.ranger.view.VXPortalUser;
-import org.apache.ranger.view.VXPortalUserList;
-import org.apache.ranger.view.VXResponse;
-import org.apache.ranger.view.VXStringList;
+import org.apache.ranger.view.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Scope;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
+import java.util.ArrayList;
+import java.util.List;
 
 @Path("users")
 @Component
@@ -198,6 +195,30 @@ public class UserREST {
 		 return vxPortalUser;
 	}
 
+	@POST
+	@Path ("/default/update")
+	@Consumes ({ "application/json", "application/xml" })
+	@Produces ({ "application/xml", "application/json" })
+	@PreAuthorize ("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.UPDATE + "\")")
+	public VXPortalUser defaultRoleUpdate(VXPortalUser userProfile,
+							   @Context HttpServletRequest servletRequest) {
+		VXPortalUser vxPortalUser = userManager.getUserProfileByLoginId(userProfile.getLoginId());
+		if (vxPortalUser != null) {
+			XXPortalUser gjUser = daoManager.getXXPortalUser().getById(vxPortalUser.getId());
+			userManager.checkAccess(gjUser);
+			List<VXString> stringRolesList = new ArrayList<>();
+			for (String str : userProfile.getUserRoleList()) {
+				VXString vxString = new VXString();
+				vxString.setValue(str);
+				stringRolesList.add(vxString);
+			}
+			VXStringList vxStringList = new VXStringList(stringRolesList);
+			userManager.setUserRoles(vxPortalUser.getId(), vxStringList.getVXStrings());
+			return vxPortalUser;
+		} else {
+			throw restErrorUtil.createRESTException(VXResponse.STATUS_ERROR, "Cannot update the user roles: The user is not registered in the Ranger database!", true);
+		}
+	}
 
 	@PUT
 	@Consumes({ "application/json", "application/xml" })
