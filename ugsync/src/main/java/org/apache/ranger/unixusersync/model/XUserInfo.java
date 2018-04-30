@@ -59,5 +59,14 @@ public class XUserInfo {
 	public List<String> getGroups() {
 		return groupNameList;
 	}
-	
+
+	@Override
+	public String toString() {
+		return "XUserInfo{" +
+				"id='" + id + '\'' +
+				", name='" + name + '\'' +
+				", description='" + description + '\'' +
+				", groupNameList=" + groupNameList +
+				'}';
+	}
 }

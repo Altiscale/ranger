@@ -196,10 +196,10 @@ public class UserREST {
 	}
 
 	@POST
-	@Path ("/default/update")
-	@Consumes ({ "application/json", "application/xml" })
-	@Produces ({ "application/xml", "application/json" })
-	@PreAuthorize ("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.UPDATE + "\")")
+	@Path("/default/update")
+	@Consumes({ "application/json", "application/xml" })
+	@Produces({ "application/xml", "application/json" })
+	@PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.UPDATE + "\")")
 	public VXPortalUser defaultRoleUpdate(VXPortalUser userProfile,
 							   @Context HttpServletRequest servletRequest) {
 		VXPortalUser vxPortalUser = userManager.getUserProfileByLoginId(userProfile.getLoginId());

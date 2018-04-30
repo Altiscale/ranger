@@ -57,6 +57,15 @@ public class XGroupInfo {
 	public void setGroupSource(String groupSource) {
 		this.groupSource = groupSource;
 	}
-	
-	
+
+	@Override
+	public String toString() {
+		return "XGroupInfo{" +
+				"id='" + id + '\'' +
+				", name='" + name + '\'' +
+				", description='" + description + '\'' +
+				", groupType='" + groupType + '\'' +
+				", groupSource='" + groupSource + '\'' +
+				'}';
+	}
 }

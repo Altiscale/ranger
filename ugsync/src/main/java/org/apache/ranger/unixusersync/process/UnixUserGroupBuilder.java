@@ -164,6 +164,7 @@ public class UnixUserGroupBuilder implements UserGroupSource {
 	private void buildUserGroupInfo() throws Throwable {
 		user2GroupListMap = new HashMap<String,List<String>>();
 		groupId2groupNameMap = new HashMap<String, String>();
+		internalUser2GroupListMap = new HashMap<String, List<String>>();
 
 		if (OS.startsWith("Mac")) {
 			buildUnixGroupList(MAC_GET_ALL_GROUPS_CMD, MAC_GET_GROUP_CMD, false);
