@@ -28,8 +28,13 @@ import java.net.UnknownHostException;
 import java.security.KeyStore;
 import java.security.PrivilegedAction;
 import java.security.SecureRandom;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.regex.Pattern;
+import java.util.Map;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.KeyManager;
@@ -40,6 +45,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.security.auth.Subject;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.security.SecureClientLogin;
@@ -820,8 +826,8 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 		    	LOG.debug("RESPONSE: [" + response.toString() + "]");
 		    }
 
-		    // Successful response is in the form of 2xx
-		    if ((response.getStatus() / 100) ==  2) {
+		    // Successful response should be in the form of 2xx
+		    if (response.getStatusInfo().getFamily() == Response.Status.Family.SUCCESSFUL) {
 		    	delUserGroupFromList(aUserInfo, aGroupInfo);
 		    }
 
