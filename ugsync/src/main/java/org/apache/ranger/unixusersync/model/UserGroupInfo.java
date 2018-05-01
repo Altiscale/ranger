@@ -38,4 +38,12 @@ public class UserGroupInfo {
 	public void setXgroupInfo(List<XGroupInfo> xgroupInfo) {
 		this.xgroupInfo = xgroupInfo;
 	}
+
+	@Override
+	public String toString() {
+		return "UserGroupInfo{" +
+				"xuserInfo=" + xuserInfo.toString() +
+				", xgroupInfo=" + xgroupInfo +
+				'}';
+	}
 }

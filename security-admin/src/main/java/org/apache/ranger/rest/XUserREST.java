@@ -80,6 +80,7 @@ import org.apache.ranger.view.VXUserGroupInfo;
 import org.apache.ranger.view.VXUserList;
 import org.apache.ranger.view.VXUserPermission;
 import org.apache.ranger.view.VXUserPermissionList;
+import org.apache.ranger.view.VXResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Scope;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -738,11 +739,16 @@ public class XUserREST {
 	@DELETE
 	@Path("/group/{groupName}/user/{userName}")
 	@PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.DELETE_X_GROUP_AND_X_USER + "\")")
-	public void deleteXGroupAndXUser(@PathParam("groupName") String groupName,
+	public VXResponse deleteXGroupAndXUser(@PathParam("groupName") String groupName,
 			@PathParam("userName") String userName,
 			@Context HttpServletRequest request) {
 		xUserMgr.checkAdminAccess();
 		xUserMgr.deleteXGroupAndXUser(groupName, userName);
+		VXResponse response = new VXResponse();
+		String msg = "User " + userName + " is removed from group " + groupName;
+		response.setMsgDesc(msg);
+		response.setStatusCode(VXResponse.STATUS_SUCCESS);
+		return response;
 	}
 	
 	@GET

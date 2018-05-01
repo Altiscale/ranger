@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.regex.Pattern;
+import java.util.Map;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.KeyManager;
@@ -44,7 +45,9 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.security.auth.Subject;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.security.SecureClientLogin;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -94,6 +97,7 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 	private static final String PM_DEL_USER_GROUP_LINK_URI = "/service/xusers/group/${groupName}/user/${userName}"; // DELETE
 	
 	private static final String PM_ADD_LOGIN_USER_URI = "/service/users/default";			// POST
+	private static final String PM_UPDATE_USER_ROLES_URI = "/service/users/default/update";		// POST
 	private static final String GROUP_SOURCE_EXTERNAL ="1";
 	private static Set<String> adminsGroupSet = new HashSet<String>();
 	
@@ -317,7 +321,6 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 
 	@Override
 	public void addOrUpdateUser(String userName, List<String> groups) throws Throwable {
-		
 		UserGroupInfo ugInfo		  = new UserGroupInfo();
 		XUserInfo user = userName2XUserInfoMap.get(userName);
 		
@@ -341,7 +344,7 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
  				// If the rest call to ranger admin fails, 
  				// propagate the failure to the caller for retry in next sync cycle.
  				if (addUserGroupInfo(userName,groups) == null ) {
- 					String msg = "Failed to add addorUpdate user group info";
+ 					String msg = "Failed to add user group info";
  					LOG.error(msg);
  					throw new Exception(msg);
  				}
@@ -353,6 +356,9 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 			List<String> addGroups = new ArrayList<String>();
 			List<String> delGroups = new ArrayList<String>();
 			List<String> updateGroups = new ArrayList<String>();
+			boolean isUserPreviouslyPortalAdmin = isUserInAdminGroup(oldGroups);
+			boolean isSyncSuccessful = true;
+
 			XGroupInfo tempXGroupInfo=null;
 			for(String group : groups) {
 				if (! oldGroups.contains(group)) {
@@ -382,16 +388,18 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 						// If the rest call to ranger admin fails, 
 		 				// propagate the failure to the caller for retry in next sync cycle.
 						if (addUserGroupInfo(ugInfo) == null) {
-							String msg = "Failed to add add user group info";
+							String msg = "Failed to add user group info";
 		 					LOG.error(msg);
 		 					throw new Exception(msg);
+						} else {
+							addXUserGroupInfo(user, addGroups);
 						}
 					}catch(Throwable t){
 						LOG.error("PolicyMgrUserGroupBuilder.addUserGroupInfo failed with exception: " + t.getMessage()
-						+ ", for user-group entry: " + ugInfo);
+						+ ", for user-group entry: " + ugInfo.toString());
+						isSyncSuccessful = false;
 					}
  				}
- 				addXUserGroupInfo(user, addGroups);
  			}
  			
  			for(String g : delGroups) {
@@ -399,7 +407,15 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
  			}
  			
  			if (! isMockRun ) {
- 				delXUserGroupInfo(user, delGroups);
+				if (!delGroups.isEmpty()) {
+					try {
+						delXUserGroupInfo(user, delGroups);
+					} catch (Throwable t) {
+						LOG.error("PolicyMgrUserGroupBuilder.delXUserGroupInfo failed with exception: " + t.getMessage()
+								+ ", for user-group entry: " + ugInfo.toString());
+						isSyncSuccessful = false;
+					}
+				}
  			}
 			if (! isMockRun) {
 				if (!updateGroups.isEmpty()){
@@ -409,15 +425,23 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 						// If the rest call to ranger admin fails, 
 		 				// propagate the failure to the caller for retry in next sync cycle.
 						if (addUserGroupInfo(ugInfo) == null) {
-							String msg = "Failed to add add user group info";
+							String msg = "Failed to add user group info";
 		 					LOG.error(msg);
 		 					throw new Exception(msg);
 						}
 					}catch(Throwable t){
 						LOG.error("PolicyMgrUserGroupBuilder.addUserGroupInfo failed with exception: " + t.getMessage()
-						+ ", for user-group entry: " + ugInfo);
+						+ ", for user-group entry: " + ugInfo.toString());
+						isSyncSuccessful = false;
 					}
 				}
+			}
+
+			// Update user role depending on the group changes
+			boolean isUserCurrentlyPortalAdmin = isUserInAdminGroup(groups);
+			if (isSyncSuccessful && (isUserCurrentlyPortalAdmin != isUserPreviouslyPortalAdmin)) {
+				// Update User Roles
+				updateMUser(userName, groups);
 			}
 		}
 	}
@@ -425,7 +449,7 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 	private void buildGroupList() {
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("==> PolicyMgrUserGroupBuilder.buildGroupList");
-		}		
+		}
 		Client c = getClient();
 		
 		int totalCount = 100;
@@ -603,7 +627,7 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 		return ret;
 	}
 
-	private void getUserGroupInfo(UserGroupInfo ret, UserGroupInfo usergroupInfo) {
+	private UserGroupInfo getUserGroupInfo(UserGroupInfo ret, UserGroupInfo usergroupInfo) {
 		Client c = getClient();
 
 		WebResource r = c.resource(getURL(PM_ADD_USER_GROUP_INFO_URI));
@@ -636,6 +660,7 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 				addUserGroupInfoToList(xUserInfo,xGroupInfo);
 			}
 		}
+		return ret;
 	}
 	
 	private UserGroupInfo addUserGroupInfo(UserGroupInfo usergroupInfo){
@@ -648,18 +673,18 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 				Subject sub = SecureClientLogin.loginUserFromKeytab(principal, keytab, nameRules);
 				final UserGroupInfo result = ret;
 				final UserGroupInfo ugInfo = usergroupInfo;
-				Subject.doAs(sub, new PrivilegedAction<Void>() {
+				ret = Subject.doAs(sub, new PrivilegedAction<UserGroupInfo>() {
 					@Override
-					public Void run() {
+					public UserGroupInfo run() {
 						try {
-							getUserGroupInfo(result, ugInfo);
+							return getUserGroupInfo(result, ugInfo);
 						} catch (Exception e) {
 							LOG.error("Failed to add User Group Info : ", e);
 						}
 						return null;
 					}
 				});
-				ret = result;
+				return ret;
 			} catch (Exception e) {
 				LOG.error("Failed to Authenticate Using given Principal and Keytab : ",e);
 			}
@@ -765,7 +790,7 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 								try {
 									delXUserGroupInfo(aUserInfo, group);
 								} catch (Exception e) {
-									LOG.error("Failed to build Group List : ", e);
+									LOG.error("Failed to delete user group : ", e);
 								}
 								return null;
 							}
@@ -801,7 +826,8 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 		    	LOG.debug("RESPONSE: [" + response.toString() + "]");
 		    }
 
-		    if (response.getStatus() == 200) {
+		    // Successful response should be in the form of 2xx
+		    if (response.getStatusInfo().getFamily() == Response.Status.Family.SUCCESSFUL) {
 		    	delUserGroupFromList(aUserInfo, aGroupInfo);
 		    }
 
@@ -810,6 +836,45 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 			LOG.warn( "ERROR: Unable to delete GROUP: " + groupName  + " from USER:" + userName , e);
 		}
 
+	}
+
+	private MUserInfo updateMUser(String aUserName, List<String> groups) {
+		MUserInfo ret = null;
+		MUserInfo userInfo = new MUserInfo();
+
+		userInfo.setLoginId(aUserName);
+		userInfo.setFirstName(aUserName);
+		userInfo.setLastName(aUserName);
+
+		if (isUserInAdminGroup (groups)) {
+			String[] userRoleList = { "ROLE_SYS_ADMIN" };
+			userInfo.setUserRoleList(userRoleList);
+		}
+
+		if (authenticationType != null && AUTH_KERBEROS.equalsIgnoreCase(authenticationType) && SecureClientLogin.isKerberosCredentialExists(principal, keytab)) {
+			try {
+				Subject sub = SecureClientLogin.loginUserFromKeytab(principal, keytab, nameRules);
+				final MUserInfo result = ret;
+				final MUserInfo userInfoFinal = userInfo;
+				ret = Subject.doAs(sub, new PrivilegedAction<MUserInfo>() {
+					@Override
+					public MUserInfo run() {
+						try {
+							return getUpdatedMUserInfo(userInfoFinal, result);
+						} catch (Exception e) {
+							LOG.error("Failed to update user: ", e);
+						}
+						return null;
+					}
+				});
+				return ret;
+			} catch (Exception e) {
+				LOG.warn("Failed to Authenticate Using given Principal and Keytab: ", e);
+			}
+			return null;
+		} else {
+			return getUpdatedMUserInfo(userInfo, ret);
+		}
 	}
 
 	private MUserInfo addMUser(String aUserName, List<String> groups) {
@@ -852,12 +917,28 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 	}
 
 	private boolean isUserInAdminGroup (List<String> groups) {
+		if (groups == null || groups.size() == 0) {
+			return false;
+		}
+
 		for (String group : groups) {
 			if (adminsGroupSet.contains(group)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	private MUserInfo getUpdatedMUserInfo (MUserInfo userInfo, MUserInfo ret) {
+		Client c = getClient();
+		WebResource r = c.resource(getURL(PM_UPDATE_USER_ROLES_URI));
+		Gson gson = new GsonBuilder().create();
+		String jsonString = gson.toJson(userInfo);
+		String response = r.accept(MediaType.APPLICATION_JSON_TYPE).type(MediaType.APPLICATION_JSON_TYPE).post(String.class, jsonString);
+		LOG.debug("RESPONSE[" + response + "]");
+		ret = gson.fromJson(response, MUserInfo.class);
+		LOG.info("MUser Update successful " + ret.toString());
+		return ret;
 	}
 
 	private MUserInfo getMUser(MUserInfo userInfo, MUserInfo ret) {		
@@ -1104,5 +1185,13 @@ public class PolicyMgrUserGroupBuilder implements UserGroupSink {
 		
 	}
 
-	
+	@VisibleForTesting
+	boolean getIsUserInAdminGroup (List<String> groups) {
+		return isUserInAdminGroup(groups);
+	}
+
+	@VisibleForTesting
+	Map<String, XUserInfo> getUserName2XUserInfoMap () {
+		return userName2XUserInfoMap;
+	}
 }
