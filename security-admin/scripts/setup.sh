@@ -89,6 +89,7 @@ policymgr_supportedcomponents=$(get_prop 'policymgr_supportedcomponents' $PROPFI
 policymgr_user_group_management_enabled=$(get_prop 'policymgr_user_group_management_enabled' $PROPFILE)
 policymgr_service_management_enabled=$(get_prop 'policymgr_service_management_enabled' $PROPFILE)
 policymgr_delegation_enabled=$(get_prop 'policymgr_delegation_enabled' $PROPFILE)
+ranger_nonadmin_user_UI_enabled=$(get_prop 'ranger_nonadmin_user_UI_enabled' $PROPFILE)
 unix_user=$(get_prop 'unix_user' $PROPFILE)
 unix_group=$(get_prop 'unix_group' $PROPFILE)
 authentication_method=$(get_prop 'authentication_method' $PROPFILE)
@@ -694,6 +695,13 @@ update_properties() {
 	then
 		propertyName=ranger.admin.delegation.enabled
 		newPropertyValue="${policymgr_delegation_enabled}"
+		updatePropertyToFilePy $propertyName $newPropertyValue $to_file_ranger
+	fi
+
+	if [ "${ranger_nonadmin_user_UI_enabled}" != "" ]
+	then
+		propertyName=ranger.nonadmin.user.UI.enabled
+		newPropertyValue="${ranger_nonadmin_user_UI_enabled}"
 		updatePropertyToFilePy $propertyName $newPropertyValue $to_file_ranger
 	fi
 

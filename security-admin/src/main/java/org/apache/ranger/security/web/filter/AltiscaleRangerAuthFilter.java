@@ -26,6 +26,7 @@ import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
 import org.apache.hadoop.security.authentication.server.AuthenticationFilter;
 import org.apache.ranger.biz.UserMgr;
 import org.apache.ranger.common.PropertiesUtil;
+import org.apache.ranger.common.RangerConstants;
 import org.apache.ranger.security.handler.RangerAuthenticationProvider;
 import org.mortbay.log.Log;
 import org.slf4j.Logger;
@@ -84,12 +85,16 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 	private static final String HOST_NAME = "ranger.service.host";
 	private static final String PRINCIPAL_PARAM = "kerberos.principal";
 	private static final String KEYTAB_PARAM = "kerberos.keytab";
+	private static final String NONADMIN_USER_UI_ENABLED = "ranger.nonadmin.user.UI.enabled";
 
 	@Autowired
 	UserMgr userMgr;
 
+	private static boolean isNonAdminUIEnabled = true;
+
 	public AltiscaleRangerAuthFilter() {
 		try {
+			isNonAdminUIEnabled = PropertiesUtil.getBooleanProperty(NONADMIN_USER_UI_ENABLED, true);
 			init(null);
 		} catch (ServletException e) {
 			LOG.error("Error while initializing AltiscaleRangerAuthFilter: " + e.getMessage());
@@ -179,9 +184,15 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 	 */
 	private void createSessionForUser (String userName, HttpServletRequest request) {
 		if (!isAuthenticated()) {
-			String defaultUserRole = "ROLE_USER";
+			String defaultUserRole = RangerConstants.ROLE_USER;
 			// if the userName is found on the token then log into ranger using the same user
 			if (userName != null && !userName.trim().isEmpty()) {
+				List<GrantedAuthority> authorities = getAuthorities(userName);
+				if (!isNonAdminUIEnabled) {
+					if (!isUserAuthorityAdmin(authorities)) {
+						return;
+					}
+				}
 				final List<GrantedAuthority> grantedAuths = new ArrayList<>();
 				grantedAuths.add(new SimpleGrantedAuthority(defaultUserRole));
 				final UserDetails principal = new User(userName, "", grantedAuths);
@@ -191,7 +202,7 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 				RangerAuthenticationProvider authenticationProvider = new RangerAuthenticationProvider();
 				authenticationProvider.setAlt_ssoEnabled(true);
 				Authentication authentication = authenticationProvider.authenticate(finalAuthentication);
-				authentication = getGrantedAuthority(authentication);
+				authentication = getGrantedAuthority(authentication, authorities);
 				SecurityContextHolder.getContext().setAuthentication(authentication);
 			}
 		}
@@ -247,10 +258,10 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 		return userName;
 	}
 
-	private Authentication getGrantedAuthority(Authentication authentication) {
+	private Authentication getGrantedAuthority(Authentication authentication, List<GrantedAuthority> authorities) {
 		if (authentication != null && authentication.isAuthenticated()) {
 			UsernamePasswordAuthenticationToken result = null;
-			final List<GrantedAuthority> grantedAuths = getAuthorities(authentication.getName().toString());
+			final List<GrantedAuthority> grantedAuths = authorities;
 			final UserDetails userDetails = new User(authentication.getName().toString(), authentication.getCredentials().toString(), grantedAuths);
 			result = new UsernamePasswordAuthenticationToken(userDetails, authentication.getCredentials(), grantedAuths);
 			result.setDetails(authentication.getDetails());
@@ -266,6 +277,22 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 			grantedAuths.add(new SimpleGrantedAuthority(role));
 		}
 		return grantedAuths;
+	}
+
+	/**
+	 * Check whether the user has an admin role (ROLE_SYS_ADMIN) or not
+	 * @param authorities The roles of user
+	 * @return if user is admin, then return true, otherwise false
+	 */
+	private boolean isUserAuthorityAdmin (List<GrantedAuthority> authorities) {
+		if (authorities != null || authorities.size() !=0) {
+			for (GrantedAuthority authority: authorities) {
+				if (authority.getAuthority().equalsIgnoreCase(RangerConstants.ROLE_SYS_ADMIN)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private boolean isAuthenticated() {

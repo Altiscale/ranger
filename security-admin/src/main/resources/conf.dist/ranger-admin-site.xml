@@ -333,6 +333,10 @@
 		<name>ranger.service.management.enabled</name>
 		<value>true</value>
 	</property>
+	<property>
+		<name>ranger.nonadmin.user.UI.enabled</name>
+		<value>true</value>
+	</property>
 	<!-- Service user for KMS -->
     <property>
     	<name>ranger.kms.service.user.hdfs</name>
