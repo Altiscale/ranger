@@ -30,20 +30,12 @@ http://www.springframework.org/schema/util/spring-util-3.2.xsd
 http://www.springframework.org/schema/security/oauth2
 http://www.springframework.org/schema/security/spring-security-oauth2-1.0.xsd">
 
-	<security:http pattern="/login.jsp" security="none" />
 	<security:http pattern="/styles/**" security="none" />
 	<security:http pattern="/fonts/**" security="none" />
 	<security:http pattern="/scripts/**" security="none" />
 	<security:http pattern="/libs/**" security="none" />
 	<security:http pattern="/images/**" security="none" />
 	<security:http pattern="/templates/**" security="none" />
-	<security:http pattern="/service/assets/policyList/*" security="none"/>
-	<security:http pattern="/service/assets/resources/grant" security="none"/>
-	<security:http pattern="/service/assets/resources/revoke" security="none"/>
-	<security:http pattern="/service/plugins/policies/download/*" security="none"/>
-	<security:http pattern="/service/plugins/services/grant/*" security="none"/>
-	<security:http pattern="/service/plugins/services/revoke/*" security="none"/>
-	<security:http pattern="/service/tags/download/*" security="none"/>
 	<security:http pattern="/service/public/admin/ok" security="none" />
 
 	<security:http disable-url-rewriting="true" use-expressions="true" create-session="always" entry-point-ref="authenticationProcessingFilterEntryPoint">

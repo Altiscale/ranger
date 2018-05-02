@@ -25,15 +25,20 @@ import org.apache.hadoop.security.SecureClientLogin;
 import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
 import org.apache.hadoop.security.authentication.server.AuthenticationFilter;
 import org.apache.ranger.biz.UserMgr;
+import org.apache.ranger.common.JSONUtil;
 import org.apache.ranger.common.PropertiesUtil;
+import org.apache.ranger.common.RangerConstants;
 import org.apache.ranger.security.handler.RangerAuthenticationProvider;
-import org.mortbay.log.Log;
+import org.apache.ranger.view.VXResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -42,6 +47,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import javax.servlet.*;
 import javax.servlet.descriptor.JspConfigDescriptor;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -84,12 +90,19 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 	private static final String HOST_NAME = "ranger.service.host";
 	private static final String PRINCIPAL_PARAM = "kerberos.principal";
 	private static final String KEYTAB_PARAM = "kerberos.keytab";
+	private static final String NONADMIN_USER_UI_ENABLED = "ranger.nonadmin.user.UI.enabled";
 
 	@Autowired
 	UserMgr userMgr;
 
+	@Autowired
+	JSONUtil jsonUtil;
+
+	private static boolean isNonAdminUIEnabled = true;
+
 	public AltiscaleRangerAuthFilter() {
 		try {
+			isNonAdminUIEnabled = PropertiesUtil.getBooleanProperty(NONADMIN_USER_UI_ENABLED, true);
 			init(null);
 		} catch (ServletException e) {
 			LOG.error("Error while initializing AltiscaleRangerAuthFilter: " + e.getMessage());
@@ -163,13 +176,43 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 			if (authUserName != null) {
 				userName = extractUserNameFromCookieHeader(authUserName);
 			}
+		} else {
+			Collection<String> cookies = new ArrayList<>();
+			for (Cookie cookie : request.getCookies()) {
+				cookies.add(cookie.toString());
+			}
+			if (!cookies.isEmpty()) {
+				userName = extractUserNameFromCookieHeader(cookies);
+			}
 		}
 		// if security context does not have a user session, authenticate the security context and create a session
-		createSessionForUser(userName, request);
-		response.setHeader("Cache-Control", "no-cache");
+		try {
+			createSessionForUser(userName, request, response);
+			response.setHeader("Cache-Control", "no-cache");
 
-		// Delegate call to next filters
-		super.doFilter(filterChain, request, response);
+			// Delegate call to next filters
+			super.doFilter(filterChain, request, response);
+		} catch (InternalAuthenticationServiceException ex) {
+			LOG.error(ex.getMessage());
+			sendErrorResponseToRequest(request, response, ex);
+		} catch (AuthenticationServiceException ex) {
+			LOG.error(ex.getMessage());
+			sendErrorResponseToRequest(request, response, ex);
+		}
+	}
+
+	private void sendErrorResponseToRequest (HttpServletRequest request, HttpServletResponse response, Exception ex) throws IOException, AuthenticationException {
+		request.getServletContext().removeAttribute(request.getRequestedSessionId());
+		response.setContentType("application/json;charset=UTF-8");
+		response.setHeader("X-Frame-Options", "DENY");
+		response.setHeader("Cache-Control", "no-cache");
+		VXResponse vXResponse = new VXResponse();
+		vXResponse.setStatusCode(HttpServletResponse.SC_UNAUTHORIZED);
+		vXResponse.setMsgDesc(ex.getMessage());
+		String jsonResp = jsonUtil.writeObjectAsString(vXResponse);
+		response.getWriter().write(jsonResp);
+		response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+		response.sendError(HttpServletResponse.SC_UNAUTHORIZED, ex.getMessage());
 	}
 
 	/**
@@ -177,11 +220,18 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 	 * @param userName
 	 * @param request
 	 */
-	private void createSessionForUser (String userName, HttpServletRequest request) {
+	private void createSessionForUser (String userName, HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
 		if (!isAuthenticated()) {
-			String defaultUserRole = "ROLE_USER";
+			String defaultUserRole = RangerConstants.ROLE_USER;
 			// if the userName is found on the token then log into ranger using the same user
 			if (userName != null && !userName.trim().isEmpty()) {
+				List<GrantedAuthority> authorities = getAuthorities(userName);
+				if (!isNonAdminUIEnabled) {
+					if (!isUserAuthorityAdmin(authorities)) {
+						throw new InternalAuthenticationServiceException("Non-admin users cannot access the Ranger UI. " +
+								"Please contact your administrator to request an access.");
+					}
+				}
 				final List<GrantedAuthority> grantedAuths = new ArrayList<>();
 				grantedAuths.add(new SimpleGrantedAuthority(defaultUserRole));
 				final UserDetails principal = new User(userName, "", grantedAuths);
@@ -191,11 +241,18 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 				RangerAuthenticationProvider authenticationProvider = new RangerAuthenticationProvider();
 				authenticationProvider.setAlt_ssoEnabled(true);
 				Authentication authentication = authenticationProvider.authenticate(finalAuthentication);
-				authentication = getGrantedAuthority(authentication);
+				authentication = getGrantedAuthority(authentication, authorities);
 				SecurityContextHolder.getContext().setAuthentication(authentication);
+			} else {
+				throw new AuthenticationServiceException("Non-admin users cannot access the Ranger UI. " +
+						"Please contact your administrator to request an access.");
 			}
 		}
 	}
+
+
+
+
 
 	/**
 	 *
@@ -247,10 +304,10 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 		return userName;
 	}
 
-	private Authentication getGrantedAuthority(Authentication authentication) {
+	private Authentication getGrantedAuthority(Authentication authentication, List<GrantedAuthority> authorities) {
 		if (authentication != null && authentication.isAuthenticated()) {
 			UsernamePasswordAuthenticationToken result = null;
-			final List<GrantedAuthority> grantedAuths = getAuthorities(authentication.getName().toString());
+			final List<GrantedAuthority> grantedAuths = authorities;
 			final UserDetails userDetails = new User(authentication.getName().toString(), authentication.getCredentials().toString(), grantedAuths);
 			result = new UsernamePasswordAuthenticationToken(userDetails, authentication.getCredentials(), grantedAuths);
 			result.setDetails(authentication.getDetails());
@@ -266,6 +323,22 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 			grantedAuths.add(new SimpleGrantedAuthority(role));
 		}
 		return grantedAuths;
+	}
+
+	/**
+	 * Check whether the user has an admin role (ROLE_SYS_ADMIN) or not
+	 * @param authorities The roles of user
+	 * @return if user is admin, then return true, otherwise false
+	 */
+	private boolean isUserAuthorityAdmin (List<GrantedAuthority> authorities) {
+		if (authorities != null || authorities.size() !=0) {
+			for (GrantedAuthority authority: authorities) {
+				if (authority.getAuthority().equalsIgnoreCase(RangerConstants.ROLE_SYS_ADMIN)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private boolean isAuthenticated() {
