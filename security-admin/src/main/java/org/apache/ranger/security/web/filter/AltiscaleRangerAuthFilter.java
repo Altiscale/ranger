@@ -24,6 +24,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.security.SecureClientLogin;
 import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
 import org.apache.hadoop.security.authentication.server.AuthenticationFilter;
+import org.apache.hadoop.security.authentication.server.AuthenticationToken;
 import org.apache.ranger.biz.UserMgr;
 import org.apache.ranger.common.JSONUtil;
 import org.apache.ranger.common.PropertiesUtil;
@@ -185,6 +186,16 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 				userName = extractUserNameFromCookieHeader(cookies);
 			}
 		}
+		// In case, the userName couldn't be extracted from the cookies
+		if (userName == null) {
+			try {
+				AuthenticationToken token = getToken(request);
+				userName = token.getUserName();
+			} catch (org.apache.hadoop.security.authentication.client.AuthenticationException e) {
+				LOG.error("User authentication is failed!. The user details cannot be fetched from the portal! [Exception]: " + e.getMessage());
+				sendErrorResponseToRequest(request, response, e);
+			}
+		}
 		// if security context does not have a user session, authenticate the security context and create a session
 		try {
 			createSessionForUser(userName, request, response);
@@ -244,8 +255,7 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 				authentication = getGrantedAuthority(authentication, authorities);
 				SecurityContextHolder.getContext().setAuthentication(authentication);
 			} else {
-				throw new AuthenticationServiceException("Non-admin users cannot access the Ranger UI. " +
-						"Please contact your administrator to request an access.");
+				throw new AuthenticationServiceException("User authentication is failed!. The user details cannot be fetched from the portal!");
 			}
 		}
 	}
