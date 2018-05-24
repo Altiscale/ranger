@@ -257,9 +257,9 @@ public class UserGroupSyncConfig  {
 	}
 
 	private void init() {
+		readConfigFile(DEFAULT_CONFIG_FILE);
 		readConfigFile(CORE_SITE_CONFIG_FILE);
 		readConfigFile(CONFIG_FILE);
-		readConfigFile(DEFAULT_CONFIG_FILE);		
 	}
 
 	private void readConfigFile(String fileName) {
