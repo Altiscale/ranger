@@ -23,6 +23,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.log4j.Logger;
 import org.apache.ranger.unixusersync.config.UserGroupSyncConfig;
 import org.apache.ranger.usergroupsync.UserGroupSink;
@@ -84,6 +87,9 @@ public class UnixUserGroupBuilder implements UserGroupSource {
 	private long passwordFileModifiedAt = 0;
 	private long groupFileModifiedAt = 0;
 
+	private String passwordFileLastChecksum = "";
+	private String groupFileLastChecksum = "";
+
 	public static void main(String[] args) throws Throwable {
 		UnixUserGroupBuilder ugbuilder = new UnixUserGroupBuilder();
 		ugbuilder.init();
@@ -126,17 +132,50 @@ public class UnixUserGroupBuilder implements UserGroupSource {
 		if (useNss)
 			return System.currentTimeMillis() - lastUpdateTime > timeout;
 
-		long TempPasswordFileModifiedAt = new File(unixPasswordFile).lastModified();
+		File passwdFile = new File(unixPasswordFile);
+		long TempPasswordFileModifiedAt = passwdFile.lastModified();
 		if (passwordFileModifiedAt != TempPasswordFileModifiedAt) {
 			return true;
+		} else {
+			String tempPasswdFileChecksum = getMd5ChecksumOfFile(passwdFile);
+			if (!passwordFileLastChecksum.equalsIgnoreCase(tempPasswdFileChecksum)) {
+				return true;
+			}
 		}
 
-		long TempGroupFileModifiedAt = new File(unixGroupFile).lastModified();
+		File groupFile = new File(unixGroupFile);
+		long TempGroupFileModifiedAt = groupFile.lastModified();
 		if (groupFileModifiedAt != TempGroupFileModifiedAt) {
 			return true;
+		} else {
+			String tempGroupFileChecksum = getMd5ChecksumOfFile(groupFile);
+			if (!groupFileLastChecksum.equalsIgnoreCase(tempGroupFileChecksum)) {
+				return true;
+			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * Returns the md5 checksum of the provided file
+	 * @param file source file
+	 * @return md5 checksum
+	 */
+	private String getMd5ChecksumOfFile (File file) {
+		String result = "";
+		FileInputStream fis;
+		try {
+			fis = new FileInputStream(file);
+			result = DigestUtils.md5Hex(fis);
+			fis.close();
+		} catch (FileNotFoundException ex) {
+			LOG.error("The file is not found! " + ex.getMessage());
+		} catch (IOException ex) {
+			LOG.error(ex.getMessage());
+		}
+
+		return result;
 	}
 
 
@@ -204,6 +243,7 @@ public class UnixUserGroupBuilder implements UserGroupSource {
 			if (!useNss) {
 				File file = new File(unixPasswordFile);
 				passwordFileModifiedAt = file.lastModified();
+				passwordFileLastChecksum = getMd5ChecksumOfFile(file);
 				FileInputStream fis = new FileInputStream(file);
 				reader = new BufferedReader(new InputStreamReader(fis, StandardCharsets.UTF_8));
 			} else {
@@ -393,6 +433,7 @@ public class UnixUserGroupBuilder implements UserGroupSource {
 			if (!useNss) {
 				File file = new File(unixGroupFile);
 				groupFileModifiedAt = file.lastModified();
+				groupFileLastChecksum = getMd5ChecksumOfFile(file);
 				FileInputStream fis = new FileInputStream(file);
 				reader = new BufferedReader(new InputStreamReader(fis, StandardCharsets.UTF_8));
 			} else {
