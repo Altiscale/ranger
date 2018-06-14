@@ -77,6 +77,25 @@ define(function(require){
 				
 			});
 		},
+		onPortalLogout : function(checksso) {
+			var url = 'ranger-portal-logout',
+			that = this;
+			$.ajax({
+				url : url,
+				type : 'GET',
+				headers : {
+					"cache-control" : "no-cache"
+				},
+				data : {
+					logout : 1,
+				},
+				success : function(resp) {
+					that.onLogoutSSO(checksso);
+				},
+				error : function(jqXHR, textStatus, err ) {
+				}
+			});
+		},
 		onLogoutSSO : function(checksso) {
 			var url = 'security-admin-web/logout.html',
 			that = this;
@@ -130,7 +149,7 @@ define(function(require){
 					"cache-control" : "no-cache"
 				},
 				success : function(resp) {
-					that.onLogoutSSO(resp);
+					that.onPortalLogout(resp);
 				},
 				error : function(jqXHR, textStatus, err ) {
 					if( jqXHR.status == 419 ){
