@@ -84,6 +84,7 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 	private static final String RANGER_SIGNATURE_SECRET_FILE = "ranger.web.authentication.alt-kerberos.signature.secret.file";
 	private static final String RANGER_TOKEN_VALIDITY = "ranger.web.authentication.alt-kerberos.token.validity";
 	private static final String RANGER_COOKIE_DOMAIN = "ranger.web.authentication.alt-kerberos.cookie.domain";
+	private static final String RANGER_COOKIE_PATH = "ranger.web.authentication.alt-kerberos.cookie.path";
 	private static final String RANGER_NON_BROWSER_USER_AGENTS = "ranger.web.authentication.alt-kerberos.non-browser.user-agents";
 	private static final String RANGER_ALT_KERBEROS_ENABLED = "ranger.web.authentication.alt-kerberos.enabled";
 	private static final String PRINCIPAL = "ranger.spnego.kerberos.principal";
@@ -125,6 +126,7 @@ public class AltiscaleRangerAuthFilter extends AuthenticationFilter {
 		params.put(RANGER_SIGNATURE_SECRET_FILE.replaceFirst(CONFIG_PREFIX, ""), PropertiesUtil.getProperty(RANGER_SIGNATURE_SECRET_FILE));
 		params.put(RANGER_TOKEN_VALIDITY.replaceFirst(CONFIG_PREFIX, ""), PropertiesUtil.getProperty(RANGER_TOKEN_VALIDITY));
 		params.put(RANGER_COOKIE_DOMAIN.replaceFirst(CONFIG_PREFIX + "alt-kerberos.",""), PropertiesUtil.getProperty(RANGER_COOKIE_DOMAIN));
+		params.put(RANGER_COOKIE_PATH.replaceFirst(CONFIG_PREFIX + "alt-kerberos.",""), PropertiesUtil.getProperty(RANGER_COOKIE_PATH));
 		params.put(RANGER_NON_BROWSER_USER_AGENTS.replaceFirst(CONFIG_PREFIX,""), PropertiesUtil.getProperty(RANGER_NON_BROWSER_USER_AGENTS));
 		try {
 			params.put(PRINCIPAL_PARAM, SecureClientLogin.getPrincipal(PropertiesUtil.getProperty(PRINCIPAL, ""), PropertiesUtil.getProperty(HOST_NAME)));
