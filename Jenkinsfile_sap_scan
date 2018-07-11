@@ -2,13 +2,14 @@
 pipeline {
     agent any
     environment {
-        SRCCLR_API_TOKEN     = credentials('srcclr_ranger_api_token')
+        SRCCLR_API_TOKEN     = credentials('srcclr_api_token')
     }
     stages {
         stage ('Initialize') {
             steps {
                 sh '''
-		    env
+		   java -version
+		   mvn --version
                 '''
             }
         }
