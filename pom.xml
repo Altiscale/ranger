@@ -213,7 +213,10 @@
                 </os>
             </activation>
             <modules>
+<!--
+  This module triggers the empty-scan bug
                 <module>unixauthnative</module>
+-->
             </modules>
         </profile>
         <profile>
