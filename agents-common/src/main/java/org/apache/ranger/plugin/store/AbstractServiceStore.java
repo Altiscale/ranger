@@ -23,11 +23,13 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.ranger.authorization.hadoop.config.RangerConfiguration;
 import org.apache.ranger.plugin.model.RangerBaseModelObject;
 import org.apache.ranger.plugin.model.RangerPolicy;
 import org.apache.ranger.plugin.model.RangerService;
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.util.SearchFilter;
+import org.apache.ranger.services.tag.RangerServiceTag;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,6 +41,10 @@ public abstract class AbstractServiceStore implements ServiceStore {
 	private static final Log LOG = LogFactory.getLog(AbstractServiceStore.class);
 
 	public static final String COMPONENT_ACCESSTYPE_SEPARATOR = ":";
+
+	private static final String AUTOPROPAGATE_ROWFILTERDEF_TO_TAG_PROP = "ranger.servicedef.autopropagate.rowfilterdef.to.tag";
+
+	private static final boolean AUTOPROPAGATE_ROWFILTERDEF_TO_TAG_PROP_DEFAULT = false;
 
 	private static final int MAX_ACCESS_TYPES_IN_SERVICE_DEF = 1000;
 
@@ -132,7 +138,7 @@ public abstract class AbstractServiceStore implements ServiceStore {
 		}
 	}
 
-	protected final long getNextVersion(Long currentVersion) {
+	public static long getNextVersion(Long currentVersion) {
 		return currentVersion == null ? 1L : currentVersion + 1;
 	}
 
@@ -303,6 +309,10 @@ public abstract class AbstractServiceStore implements ServiceStore {
 			updateNeeded = true;
 		}
 
+		boolean resourceUpdated = updateResourceInTagServiceDef(tagServiceDef);
+
+		updateNeeded = updateNeeded || resourceUpdated;
+
 		if (updateNeeded) {
 			try {
 				updateServiceDef(tagServiceDef);
@@ -344,7 +354,10 @@ public abstract class AbstractServiceStore implements ServiceStore {
 		tagServiceDef.getAccessTypes().removeAll(accessTypes);
 
 		updateTagServiceDefForDeletingDataMaskDef(tagServiceDef, serviceDefName);
+
 		updateTagServiceDefForDeletingRowFilterDef(tagServiceDef, serviceDefName);
+
+		updateResourceInTagServiceDef(tagServiceDef);
 
 		try {
 			updateServiceDef(tagServiceDef);
@@ -502,19 +515,22 @@ public abstract class AbstractServiceStore implements ServiceStore {
 		}
 		boolean ret = false;
 
-		RangerServiceDef.RangerRowFilterDef svcRowFilterDef = serviceDef.getRowFilterDef();
-		RangerServiceDef.RangerRowFilterDef tagRowFilterDef = tagServiceDef.getRowFilterDef();
+		boolean autopropagateRowfilterdefToTag = RangerConfiguration.getInstance().getBoolean(AUTOPROPAGATE_ROWFILTERDEF_TO_TAG_PROP, AUTOPROPAGATE_ROWFILTERDEF_TO_TAG_PROP_DEFAULT);
 
-		List<RangerServiceDef.RangerAccessTypeDef> svcDefAccessTypes = svcRowFilterDef.getAccessTypes();
-		List<RangerServiceDef.RangerAccessTypeDef> tagDefAccessTypes = tagRowFilterDef.getAccessTypes();
+		if (autopropagateRowfilterdefToTag) {
+			RangerServiceDef.RangerRowFilterDef svcRowFilterDef = serviceDef.getRowFilterDef();
+			RangerServiceDef.RangerRowFilterDef tagRowFilterDef = tagServiceDef.getRowFilterDef();
 
-		boolean tagRowFilterAccessTypesUpdated = updateTagAccessTypeDefs(svcDefAccessTypes, tagDefAccessTypes, itemIdOffset, prefix);
+			List<RangerServiceDef.RangerAccessTypeDef> svcDefAccessTypes = svcRowFilterDef.getAccessTypes();
+			List<RangerServiceDef.RangerAccessTypeDef> tagDefAccessTypes = tagRowFilterDef.getAccessTypes();
 
-		if (tagRowFilterAccessTypesUpdated) {
-			tagRowFilterDef.setAccessTypes(tagDefAccessTypes);
-			ret = true;
+			boolean tagRowFilterAccessTypesUpdated = updateTagAccessTypeDefs(svcDefAccessTypes, tagDefAccessTypes, itemIdOffset, prefix);
+
+			if (tagRowFilterAccessTypesUpdated) {
+				tagRowFilterDef.setAccessTypes(tagDefAccessTypes);
+				ret = true;
+			}
 		}
-
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("<== AbstractServiceStore.updateTagServiceDefForUpdatingRowFilterDef(" + serviceDef.getName() + ") : " + ret);
 		}
@@ -547,5 +563,57 @@ public abstract class AbstractServiceStore implements ServiceStore {
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("<== AbstractServiceStore.updateTagServiceDefForDeletingRowFilterDef(" + serviceDefName + ")");
 		}
+	}
+
+	private boolean updateResourceInTagServiceDef(RangerServiceDef tagServiceDef) throws Exception {
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("==> AbstractServiceStore.updateResourceInTagServiceDef(" + tagServiceDef + ")");
+		}
+		boolean ret = false;
+
+		RangerServiceDef.RangerResourceDef tagResource = new RangerServiceDef.RangerResourceDef();
+		tagResource.setName(RangerServiceTag.TAG_RESOURCE_NAME);
+		List<RangerServiceDef.RangerResourceDef> resources = new ArrayList<>();
+		resources.add(tagResource);
+
+		RangerServiceDef.RangerDataMaskDef dataMaskDef = tagServiceDef.getDataMaskDef();
+
+		if (dataMaskDef != null) {
+			if (CollectionUtils.isNotEmpty(dataMaskDef.getAccessTypes())) {
+				if (CollectionUtils.isEmpty(dataMaskDef.getResources())) {
+					dataMaskDef.setResources(resources);
+					ret = true;
+				}
+			} else {
+				if (CollectionUtils.isNotEmpty(dataMaskDef.getResources())) {
+					dataMaskDef.setResources(null);
+					ret = true;
+				}
+			}
+		}
+
+		RangerServiceDef.RangerRowFilterDef rowFilterDef = tagServiceDef.getRowFilterDef();
+
+		if (rowFilterDef != null) {
+			boolean autopropagateRowfilterdefToTag = RangerConfiguration.getInstance().getBoolean(AUTOPROPAGATE_ROWFILTERDEF_TO_TAG_PROP, AUTOPROPAGATE_ROWFILTERDEF_TO_TAG_PROP_DEFAULT);
+			if (autopropagateRowfilterdefToTag) {
+				if (CollectionUtils.isNotEmpty(rowFilterDef.getAccessTypes())) {
+					if (CollectionUtils.isEmpty(rowFilterDef.getResources())) {
+						rowFilterDef.setResources(resources);
+						ret = true;
+					}
+				} else {
+					if (CollectionUtils.isNotEmpty(rowFilterDef.getResources())) {
+						rowFilterDef.setResources(null);
+						ret = true;
+					}
+				}
+			}
+		}
+
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("<== AbstractServiceStore.updateResourceInTagServiceDef(" + tagServiceDef + ") : " + ret);
+		}
+		return ret;
 	}
 }

@@ -200,6 +200,7 @@
                 <outputDirectory>/ews/lib</outputDirectory>
                 <includes>
                     <include>org.apache.tomcat.embed:tomcat-embed*</include>
+                    <include>org.apache.tomcat:tomcat-annotations-api*</include>
                     <include>org.eclipse.jdt.core.compiler:ecj:jar:P20140317-1600</include>
                     <include>log4j:log4j</include>
 		    		<include>org.apache.hadoop:hadoop-auth:jar:${hadoop.version}</include>
@@ -266,7 +267,6 @@
                 <outputDirectory>/jisql/lib</outputDirectory>
                 <unpack>false</unpack>
 				<includes>
-                    <include>net.sourceforge.javacsv:javacsv</include>
                     <include>net.sf.jopt-simple:jopt-simple</include>
 				</includes>
             </dependencySet>
@@ -378,7 +378,8 @@
 			<include>ranger_credential_helper.py</include>
 			<include>deleteUserGroupUtil.py</include>
 			<include>changepasswordutil.py</include>
-                        <include>changeusernameutil.py</include>
+                <include>changeusernameutil.py</include>
+                <include>rolebasedusersearchutil.py</include>
 		</includes>
 		<fileMode>544</fileMode>
 	</fileSet>

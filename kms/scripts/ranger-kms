@@ -33,7 +33,7 @@ RANGER_KMS_EWS_DIR=${RANGER_KMS_DIR}/ews
 RANGER_KMS_EWS_CONF_DIR="${RANGER_KMS_EWS_DIR}/webapp/WEB-INF/classes/conf"
 RANGER_KMS_EWS_LIB_DIR="${RANGER_KMS_EWS_DIR}/webapp/WEB-INF/classes/lib"
 
-JAVA_OPTS=" ${JAVA_OPTS} -XX:MaxPermSize=256m -Xmx1024m -Xms1024m "
+ranger_kms_max_heap_size=1g
 
 if [ -f ${RANGER_KMS_DIR}/ews/webapp/WEB-INF/classes/conf/java_home.sh ]; then
         . ${RANGER_KMS_DIR}/ews/webapp/WEB-INF/classes/conf/java_home.sh
@@ -44,6 +44,8 @@ for custom_env_script in `find ${RANGER_KMS_DIR}/ews/webapp/WEB-INF/classes/conf
                 . $custom_env_script
         fi
 done
+
+JAVA_OPTS=" ${JAVA_OPTS}  -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=256m -Xmx${ranger_kms_max_heap_size} -Xms1g "
 
 if [ "$JAVA_HOME" != "" ]; then
         export PATH=$JAVA_HOME/bin:$PATH
@@ -89,7 +91,7 @@ fi
 
 KMS_CONF_DIR=${RANGER_KMS_EWS_DIR}/webapp/WEB-INF/classes/conf
 SERVER_NAME=rangerkms
-JAVA_OPTS="${JAVA_OPTS} -Dservername=${SERVER_NAME} -Dcatalina.base=${RANGER_KMS_EWS_DIR} -Dkms.config.dir=${KMS_CONF_DIR} -Dkms.log.dir=${TOMCAT_LOG_DIR} -cp ${RANGER_KMS_EWS_CONF_DIR}:${RANGER_KMS_EWS_LIB_DIR}/*:${RANGER_KMS_EWS_DIR}/webapp/lib/*:${JAVA_HOME}/lib/*:${RANGER_HADOOP_CONF_DIR}/*:$CLASSPATH "
+JAVA_OPTS="${JAVA_OPTS} ${DB_SSL_PARAM} -Dservername=${SERVER_NAME} -Dcatalina.base=${RANGER_KMS_EWS_DIR} -Dkms.config.dir=${KMS_CONF_DIR} -Dkms.log.dir=${TOMCAT_LOG_DIR} -cp ${RANGER_KMS_EWS_CONF_DIR}:${RANGER_KMS_EWS_LIB_DIR}/*:${RANGER_KMS_EWS_DIR}/webapp/lib/*:${JAVA_HOME}/lib/*:${RANGER_HADOOP_CONF_DIR}/*:$CLASSPATH "
 createRangerKMSPid () {
 	SLEEP_TIME_AFTER_START=5
 	nohup java -D${PROC_NAME} ${JAVA_OPTS} ${START_CLASS_NAME} ${KMS_CONFIG_FILENAME} > ${TOMCAT_LOG_FILE} 2>&1 &
@@ -142,6 +144,10 @@ killRangerKMSPid () {
 	fi
 }
 metric(){
+  if [ "$JAVA_HOME" == "" ]; then
+    echo "[E] JAVA_HOME environment variable not defined, aborting Apache Ranger KMS metric collection" 1>&2;
+    exit 1;
+  fi
 	java  ${JAVA_OPTS} org.apache.hadoop.crypto.key.kms.server.KMSMetricUtil ${arg2} ${arg3} 2>/dev/null
 }
 if [ "${action}" == "START" ]; then

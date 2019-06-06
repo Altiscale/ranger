@@ -20,26 +20,22 @@
 package org.apache.ranger.tagsync.source.atlas;
 
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.Provider;
-
+import org.apache.atlas.kafka.NotificationProvider;
+import org.apache.atlas.notification.NotificationConsumer;
+import org.apache.atlas.notification.NotificationInterface;
+import org.apache.atlas.notification.entity.EntityNotification;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
-import org.apache.atlas.notification.NotificationConsumer;
-import org.apache.atlas.notification.NotificationInterface;
-import org.apache.atlas.notification.NotificationModule;
-import org.apache.atlas.notification.entity.EntityNotification;
-
-import org.apache.ranger.tagsync.model.AbstractTagSource;
 import org.apache.ranger.plugin.util.ServiceTags;
+import org.apache.ranger.tagsync.model.AbstractTagSource;
+import org.apache.atlas.kafka.AtlasKafkaMessage;
+import org.apache.kafka.common.TopicPartition;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Properties;
 import java.util.List;
+import java.util.Properties;
 
 public class AtlasTagSource extends AbstractTagSource {
 	private static final Log LOG = LogFactory.getLog(AtlasTagSource.class);
@@ -102,12 +98,7 @@ public class AtlasTagSource extends AbstractTagSource {
 		}
 
 		if (ret) {
-			NotificationModule notificationModule = new NotificationModule();
-
-			Injector injector = Guice.createInjector(notificationModule);
-
-			Provider<NotificationInterface> consumerProvider = injector.getProvider(NotificationInterface.class);
-			NotificationInterface notification = consumerProvider.get();
+			NotificationInterface notification = NotificationProvider.get();
 			List<NotificationConsumer<EntityNotification>> iterators = notification.createConsumers(NotificationInterface.NotificationType.ENTITIES, 1);
 
 			consumerTask = new ConsumerRunnable(iterators.get(0));
@@ -163,43 +154,78 @@ public class AtlasTagSource extends AbstractTagSource {
 			this.consumer = consumer;
 		}
 
-		private boolean hasNext() {
-			boolean ret = false;
-			try {
-				ret = consumer.hasNext();
-			} catch (Exception exception) {
-				LOG.error("EntityNotification consumer threw exception, IGNORING...:", exception);
-			}
-			return ret;
-		}
 
 		@Override
 		public void run() {
 			if (LOG.isDebugEnabled()) {
 				LOG.debug("==> ConsumerRunnable.run()");
 			}
+			boolean seenCommitException = false;
+			long offsetOfLastMessageDeliveredToRanger = -1L;
+
 			while (true) {
 				try {
-					if (hasNext()) {
-						EntityNotification notification = consumer.peek();
+					List<AtlasKafkaMessage<EntityNotification>> messages = consumer.receive(1000L);
+					int index = 0;
+
+					if (seenCommitException) {
+						for (; index < messages.size(); index++) {
+							AtlasKafkaMessage<EntityNotification> message = messages.get(index);
+							if (message.getOffset() <= offsetOfLastMessageDeliveredToRanger) {
+								// Already delivered to Ranger
+								TopicPartition partition = new TopicPartition("ATLAS_ENTITIES", message.getPartition());
+								try {
+									consumer.commit(partition, message.getOffset());
+								} catch (Exception commitException) {
+									LOG.warn("Ranger tagsync already processed message at offset " + message.getOffset() + ". Ignoring failure in committing this message and continuing to process next message", commitException);
+									LOG.warn("This will cause Kafka to deliver this message:[" + message.getOffset() + "] repeatedly!! This may be unrecoverable error!!");
+								}
+							} else {
+								seenCommitException = false;
+								offsetOfLastMessageDeliveredToRanger = -1L;
+								break;
+							}
+						}
+					}
+
+					for (; index < messages.size(); index++) {
+						AtlasKafkaMessage<EntityNotification> message = messages.get(index);
+						EntityNotification notification = message != null ? message.getMessage() : null;
+
 						if (notification != null) {
 							if (LOG.isDebugEnabled()) {
-								LOG.debug("Notification=" + getPrintableEntityNotification(notification));
+								LOG.debug("Message-offset=" + message.getOffset() + ", Notification=" + getPrintableEntityNotification(notification));
 							}
 
 							ServiceTags serviceTags = AtlasNotificationMapper.processEntityNotification(notification);
 							if (serviceTags != null) {
 								updateSink(serviceTags);
 							}
+							offsetOfLastMessageDeliveredToRanger = message.getOffset();
+
+							if (!seenCommitException) {
+								TopicPartition partition = new TopicPartition("ATLAS_ENTITIES", message.getPartition());
+								try {
+									consumer.commit(partition, message.getOffset());
+								} catch (Exception commitException) {
+									seenCommitException = true;
+									LOG.warn("Ranger tagsync processed message at offset " + message.getOffset() + ". Ignoring failure in committing this message and continuing to process next message", commitException);
+								}
+							}
 						} else {
 							LOG.error("Null entityNotification received from Kafka!! Ignoring..");
 						}
-						// Move iterator forward
-						consumer.next();
 					}
 				} catch (Exception exception) {
-					LOG.error("Caught exception..: ", exception);
-					return;
+					LOG.error("Caught exception : ", exception);
+					// If transient error, retry after short interval
+					try {
+						Thread.sleep(100);
+					} catch (InterruptedException interrupted) {
+						LOG.error("Interrupted: ", interrupted);
+						LOG.error("Returning from thread. May cause process to be up but not processing events!!");
+						return;
+					}
 				}
 			}
 		}

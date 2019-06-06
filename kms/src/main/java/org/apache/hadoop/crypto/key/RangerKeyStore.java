@@ -26,11 +26,13 @@ import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.security.AlgorithmParameters;
 import java.security.DigestInputStream;
 import java.security.DigestOutputStream;
 import java.security.Key;
@@ -39,16 +41,24 @@ import java.security.KeyStoreException;
 import java.security.KeyStoreSpi;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.SealedObject;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.PBEParameterSpec;
 import javax.xml.bind.DatatypeConverter;
 
 import org.apache.hadoop.crypto.key.KeyProvider.Metadata;
@@ -64,6 +74,8 @@ import org.apache.ranger.kms.dao.RangerKMSDao;
 public class RangerKeyStore extends KeyStoreSpi {
 	
 	static final Logger logger = Logger.getLogger(RangerKeyStore.class);
+        private static final String KEY_NAME_VALIDATION = "[a-z,A-Z,0-9](?!.*--)(?!.*__)(?!.*-_)(?!.*_-)[\\w\\-\\_]*";
+        private static final Pattern pattern = Pattern.compile(KEY_NAME_VALIDATION);
 		
 	private DaoManager daoManager;
 	
@@ -89,7 +101,7 @@ public class RangerKeyStore extends KeyStoreSpi {
     RangerKeyStore() {
     }
 
-    RangerKeyStore(DaoManager daoManager) {
+    public RangerKeyStore(DaoManager daoManager) {
     	this.daoManager = daoManager;
 	}
 
@@ -108,17 +120,9 @@ public class RangerKeyStore extends KeyStoreSpi {
             return null;
         }
 
-        Class<?> c = null;
-    	Object o = null;
 		try {
-			c = Class.forName("com.sun.crypto.provider.KeyProtector");
-			Constructor<?> constructor = c.getDeclaredConstructor(char[].class);
-	        constructor.setAccessible(true);
-	        o = constructor.newInstance(password);	
-	        Method m = c.getDeclaredMethod("unseal", SealedObject.class);
-            m.setAccessible(true);
-			key = (Key) m.invoke(o, ((SecretKeyEntry)entry).sealedKey);
-		} catch (ClassNotFoundException | NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+			key = unsealKey(((SecretKeyEntry)entry).sealedKey, password);
+		} catch (Exception e) {
 			logger.error(e.getMessage());
 		}
         return key;
@@ -144,22 +148,9 @@ public class RangerKeyStore extends KeyStoreSpi {
     	SecretKeyEntry entry = new SecretKeyEntry();
         synchronized(deltaEntries) {
             try {            	
-            	Class<?> c = null;
-            	Object o = null;
-        		try {
-        			c = Class.forName("com.sun.crypto.provider.KeyProtector");
-        			Constructor<?> constructor = c.getDeclaredConstructor(char[].class);
-        	        constructor.setAccessible(true);
-        	        o = constructor.newInstance(password);        	
-        		} catch (ClassNotFoundException | NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-        			logger.error(e.getMessage());
-        			throw new KeyStoreException(e.getMessage());
-        		}
                 entry.date = new Date();
                 // seal and store the key
-                Method m = c.getDeclaredMethod("seal", Key.class);
-                m.setAccessible(true);
-                entry.sealedKey = (SealedObject) m.invoke(o, key);
+                entry.sealedKey = sealKey(key, password);
 
                 entry.cipher_field = cipher;
                 entry.bit_length = bitLength;
@@ -180,6 +171,47 @@ public class RangerKeyStore extends KeyStoreSpi {
             	throw new KeyStoreException(e.getMessage());
             }
         }
+    }
+
+    private SealedObject sealKey(Key key, char[] password) throws Exception {
+        // Create SecretKey
+        SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance("PBEWithMD5AndTripleDES");
+        PBEKeySpec pbeKeySpec = new PBEKeySpec(password);
+        SecretKey secretKey = secretKeyFactory.generateSecret(pbeKeySpec);
+        pbeKeySpec.clearPassword();
+
+        // Generate random bytes + set up the PBEParameterSpec
+        SecureRandom random = new SecureRandom();
+        byte[] salt = new byte[8];
+        random.nextBytes(salt);
+        PBEParameterSpec pbeSpec = new PBEParameterSpec(salt, 20);
+
+        // Seal the Key
+        Cipher cipher = Cipher.getInstance("PBEWithMD5AndTripleDES");
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey, pbeSpec);
+        return new RangerSealedObject(key, cipher);
+    }
+
+    private Key unsealKey(SealedObject sealedKey, char[] password) throws Exception {
+        // Create SecretKey
+        SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance("PBEWithMD5AndTripleDES");
+        PBEKeySpec pbeKeySpec = new PBEKeySpec(password);
+        SecretKey secretKey = secretKeyFactory.generateSecret(pbeKeySpec);
+        pbeKeySpec.clearPassword();
+
+        // Get the AlgorithmParameters from RangerSealedObject
+        AlgorithmParameters algorithmParameters = null;
+        if (sealedKey instanceof RangerSealedObject) {
+            algorithmParameters = ((RangerSealedObject)sealedKey).getParameters();
+        } else {
+            algorithmParameters = new RangerSealedObject(sealedKey).getParameters();
+        }
+
+        // Unseal the Key
+        Cipher cipher = Cipher.getInstance("PBEWithMD5AndTripleDES");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, algorithmParameters);
+
+        return (Key)sealedKey.getObject(cipher);
     }
 
     @Override
@@ -526,6 +558,7 @@ public class RangerKeyStore extends KeyStoreSpi {
 			                      entry.cipher_field = k.getAlgorithm();
 							  }
 		                      String keyName = alias.split("@")[0];
+                                      validateKeyName(keyName);
 		                      entry.attributes = "{\"key.acl.name\":\"" +  keyName + "\"}";
 		                      Class<?> c = null;
 		                  	  Object o = null;
@@ -581,9 +614,44 @@ public class RangerKeyStore extends KeyStoreSpi {
 				}
 			}
 	}
-	
+
+        private void validateKeyName(String name) {
+                Matcher matcher = pattern.matcher(name);
+                if (!matcher.matches()) {
+                        throw new IllegalArgumentException(
+                                        "Key Name : "
+                                                        + name
+                                                        + ", should start with alpha/numeric letters and can have special characters - (hypen) or _ (underscore)");
+                }
+        }
+
 	public void clearDeltaEntires(){
 		deltaEntries.clear();
 	}
-	
+
+	/**
+	 * Encapsulate the encrypted key, so that we can retrieve the AlgorithmParameters object on the decryption side
+	 */
+	private static class RangerSealedObject extends SealedObject {
+
+	    /**
+	     *
+	     */
+	    private static final long serialVersionUID = -7551578543434362070L;
+
+	    protected RangerSealedObject(SealedObject so) {
+	        super(so);
+	    }
+
+	    protected RangerSealedObject(Serializable object, Cipher cipher) throws IllegalBlockSizeException, IOException {
+	        super(object, cipher);
+	    }
+
+	    public AlgorithmParameters getParameters() throws NoSuchAlgorithmException, IOException {
+	        AlgorithmParameters algorithmParameters = AlgorithmParameters.getInstance("PBEWithMD5AndTripleDES");
+	        algorithmParameters.init(super.encodedParams);
+	        return algorithmParameters;
+	    }
+
+	}
 }

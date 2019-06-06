@@ -35,7 +35,7 @@ os_name = os_name.upper()
 ranger_version=''
 jisql_debug=True
 retryPatchAfterSeconds=120
-
+java_patch_regex="^Patch.*?J\d{5}.class$"
 is_unix = os_name == "LINUX" or os_name == "DARWIN"
 
 if is_unix:
@@ -93,6 +93,8 @@ def populate_global_dict():
 				value = ''
 			value = value.strip()
 			globalDict[key] = value
+		if 'ranger_admin_max_heap_size' not in globalDict:
+			globalDict['ranger_admin_max_heap_size']='1g'
 
 def jisql_log(query, db_password):
 	if jisql_debug == True:
@@ -183,13 +185,14 @@ class BaseDB(object):
 
 class MysqlConf(BaseDB):
 	# Constructor
-	def __init__(self, host,SQL_CONNECTOR_JAR,JAVA_BIN,db_ssl_enabled,db_ssl_required,db_ssl_verifyServerCertificate,javax_net_ssl_keyStore,javax_net_ssl_keyStorePassword,javax_net_ssl_trustStore,javax_net_ssl_trustStorePassword):
+	def __init__(self, host,SQL_CONNECTOR_JAR,JAVA_BIN,db_ssl_enabled,db_ssl_required,db_ssl_verifyServerCertificate,javax_net_ssl_keyStore,javax_net_ssl_keyStorePassword,javax_net_ssl_trustStore,javax_net_ssl_trustStorePassword,db_ssl_auth_type):
 		self.host = host
 		self.SQL_CONNECTOR_JAR = SQL_CONNECTOR_JAR
 		self.JAVA_BIN = JAVA_BIN
 		self.db_ssl_enabled=db_ssl_enabled.lower()
 		self.db_ssl_required=db_ssl_required.lower()
 		self.db_ssl_verifyServerCertificate=db_ssl_verifyServerCertificate.lower()
+		self.db_ssl_auth_type=db_ssl_auth_type.lower()
 		self.javax_net_ssl_keyStore=javax_net_ssl_keyStore
 		self.javax_net_ssl_keyStorePassword=javax_net_ssl_keyStorePassword
 		self.javax_net_ssl_trustStore=javax_net_ssl_trustStore
@@ -202,7 +205,10 @@ class MysqlConf(BaseDB):
 		if self.db_ssl_enabled == 'true':
 			db_ssl_param="?useSSL=%s&requireSSL=%s&verifyServerCertificate=%s" %(self.db_ssl_enabled,self.db_ssl_required,self.db_ssl_verifyServerCertificate)
 			if self.db_ssl_verifyServerCertificate == 'true':
-				db_ssl_cert_param=" -Djavax.net.ssl.keyStore=%s -Djavax.net.ssl.keyStorePassword=%s -Djavax.net.ssl.trustStore=%s -Djavax.net.ssl.trustStorePassword=%s " %(self.javax_net_ssl_keyStore,self.javax_net_ssl_keyStorePassword,self.javax_net_ssl_trustStore,self.javax_net_ssl_trustStorePassword)
+				if self.db_ssl_auth_type == '1-way':
+					db_ssl_cert_param=" -Djavax.net.ssl.trustStore=%s -Djavax.net.ssl.trustStorePassword=%s " %(self.javax_net_ssl_trustStore,self.javax_net_ssl_trustStorePassword)
+				else:
+					db_ssl_cert_param=" -Djavax.net.ssl.keyStore=%s -Djavax.net.ssl.keyStorePassword=%s -Djavax.net.ssl.trustStore=%s -Djavax.net.ssl.trustStorePassword=%s " %(self.javax_net_ssl_keyStore,self.javax_net_ssl_keyStorePassword,self.javax_net_ssl_trustStore,self.javax_net_ssl_trustStorePassword)
 		self.JAVA_BIN = self.JAVA_BIN.strip("'")
 		if is_unix:
 			jisql_cmd = "%s %s -cp %s:%s/jisql/lib/* org.apache.util.sql.Jisql -driver mysqlconj -cstring jdbc:mysql://%s/%s%s -u '%s' -p '%s' -noheader -trim -c \;" %(self.JAVA_BIN,db_ssl_cert_param,self.SQL_CONNECTOR_JAR,path,self.host,db_name,db_ssl_param,user,password)
@@ -481,6 +487,7 @@ class MysqlConf(BaseDB):
 		self.grant_audit_db_user(db_user, audit_db_name, audit_db_user, audit_db_password, db_password,TABLE_NAME)
 
 	def execute_java_patches(self, xa_db_host, db_user, db_password, db_name):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = ""
@@ -494,7 +501,7 @@ class MysqlConf(BaseDB):
 			files = os.listdir(javaFiles)
 			if files:
 				for filename in files:
-					f = re.match("^Patch.*?.class$",filename)
+					f = re.match(java_patch_regex,filename)
 					if f:
 						className = re.match("(Patch.*?)_.*.class",filename)
 						className = className.group(1)
@@ -551,7 +558,7 @@ class MysqlConf(BaseDB):
 								path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 							elif os_name == "WINDOWS":
 								path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-							get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,ranger_log,path,className)
+							get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className)
 							if is_unix:
 								ret = subprocess.call(shlex.split(get_java_cmd))
 							elif os_name == "WINDOWS":
@@ -1171,6 +1178,7 @@ class OracleConf(BaseDB):
 		self.grant_audit_db_user( audit_db_name ,db_user, audit_db_user, db_password,audit_db_password)
 
 	def execute_java_patches(self, xa_db_host, db_user, db_password, db_name):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = ""
@@ -1184,7 +1192,7 @@ class OracleConf(BaseDB):
 			files = os.listdir(javaFiles)
 			if files:
 				for filename in files:
-					f = re.match("^Patch.*?.class$",filename)
+					f = re.match(java_patch_regex,filename)
 					if f:
 						className = re.match("(Patch.*?)_.*.class",filename)
 						className = className.group(1)
@@ -1266,7 +1274,7 @@ class OracleConf(BaseDB):
 								path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 							elif os_name == "WINDOWS":
 								path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-							get_java_cmd = "%s -Djava.security.egd=file:///dev/urandom -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,ranger_log,path,className)
+							get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Djava.security.egd=file:///dev/urandom -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className)
 							if is_unix:
 								ret = subprocess.call(shlex.split(get_java_cmd))
 							elif os_name == "WINDOWS":
@@ -1306,6 +1314,7 @@ class OracleConf(BaseDB):
 								sys.exit(1)
 
 	def change_admin_default_password(self, xa_db_host, db_user, db_password, db_name,userName,oldPassword,newPassword):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = "ChangePasswordUtil"
@@ -1355,7 +1364,7 @@ class OracleConf(BaseDB):
 							path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 						elif os_name == "WINDOWS":
 							path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-						get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,ranger_log,path,className,userName,oldPassword,newPassword)
+						get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className,userName,oldPassword,newPassword)
 						if is_unix:
 							status = subprocess.call(shlex.split(get_java_cmd))
 						elif os_name == "WINDOWS":
@@ -1866,6 +1875,7 @@ class PostgresConf(BaseDB):
 		self.grant_audit_db_user(audit_db_name ,db_user, audit_db_user, db_password,audit_db_password)
 
 	def execute_java_patches(self, xa_db_host, db_user, db_password, db_name):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = ""
@@ -1879,7 +1889,7 @@ class PostgresConf(BaseDB):
 			files = os.listdir(javaFiles)
 			if files:
 				for filename in files:
-					f = re.match("^Patch.*?.class$",filename)
+					f = re.match(java_patch_regex,filename)
 					if f:
 						className = re.match("(Patch.*?)_.*.class",filename)
 						className = className.group(1)
@@ -1936,7 +1946,7 @@ class PostgresConf(BaseDB):
 								path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 							elif os_name == "WINDOWS":
 								path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-							get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,ranger_log,path,className)
+							get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className)
 							if is_unix:
 								ret = subprocess.call(shlex.split(get_java_cmd))
 							elif os_name == "WINDOWS":
@@ -1976,6 +1986,7 @@ class PostgresConf(BaseDB):
 								sys.exit(1)
 
 	def change_admin_default_password(self, xa_db_host, db_user, db_password, db_name,userName,oldPassword,newPassword):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = "ChangePasswordUtil"
@@ -2025,7 +2036,7 @@ class PostgresConf(BaseDB):
 							path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 						elif os_name == "WINDOWS":
 							path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-						get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,ranger_log,path,className,userName,oldPassword,newPassword)
+						get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className,userName,oldPassword,newPassword)
 						if is_unix:
 							status = subprocess.call(shlex.split(get_java_cmd))
 						elif os_name == "WINDOWS":
@@ -2498,6 +2509,7 @@ class SqlServerConf(BaseDB):
 		self.grant_audit_db_user( audit_db_name ,db_user, audit_db_user, db_password,audit_db_password,TABLE_NAME)
 
 	def execute_java_patches(self, xa_db_host, db_user, db_password, db_name):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = ""
@@ -2511,7 +2523,7 @@ class SqlServerConf(BaseDB):
 			files = os.listdir(javaFiles)
 			if files:
 				for filename in files:
-					f = re.match("^Patch.*?.class$",filename)
+					f = re.match(java_patch_regex,filename)
 					if f:
 						className = re.match("(Patch.*?)_.*.class",filename)
 						className = className.group(1)
@@ -2568,7 +2580,7 @@ class SqlServerConf(BaseDB):
 								path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 							elif os_name == "WINDOWS":
 								path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-							get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,ranger_log,path,className)
+							get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className)
 							if is_unix:
 								ret = subprocess.call(shlex.split(get_java_cmd))
 							elif os_name == "WINDOWS":
@@ -2608,6 +2620,7 @@ class SqlServerConf(BaseDB):
 								sys.exit(1)
 
 	def change_admin_default_password(self, xa_db_host, db_user, db_password, db_name,userName,oldPassword,newPassword):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = "ChangePasswordUtil"
@@ -2657,7 +2670,7 @@ class SqlServerConf(BaseDB):
 							path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 						elif os_name == "WINDOWS":
 							path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-						get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,ranger_log,path,className,userName,oldPassword,newPassword)
+						get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className,userName,oldPassword,newPassword)
 						if is_unix:
 							status = subprocess.call(shlex.split(get_java_cmd))
 						elif os_name == "WINDOWS":
@@ -3122,6 +3135,7 @@ class SqlAnywhereConf(BaseDB):
 		self.grant_audit_db_user( audit_db_name ,db_user, audit_db_user, db_password,audit_db_password,TABLE_NAME)
 
 	def execute_java_patches(self, xa_db_host, db_user, db_password, db_name):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = ""
@@ -3135,7 +3149,7 @@ class SqlAnywhereConf(BaseDB):
 			files = os.listdir(javaFiles)
 			if files:
 				for filename in files:
-					f = re.match("^Patch.*?.class$",filename)
+					f = re.match(java_patch_regex,filename)
 					if f:
 						className = re.match("(Patch.*?)_.*.class",filename)
 						className = className.group(1)
@@ -3192,7 +3206,7 @@ class SqlAnywhereConf(BaseDB):
 								path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 							elif os_name == "WINDOWS":
 								path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-							get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,ranger_log,path,className)
+							get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.%s"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className)
 							if is_unix:
 								ret = subprocess.call(shlex.split(get_java_cmd))
 							elif os_name == "WINDOWS":
@@ -3253,6 +3267,7 @@ class SqlAnywhereConf(BaseDB):
 		ret = subprocessCallWithRetry(shlex.split(query))
 
 	def change_admin_default_password(self, xa_db_host, db_user, db_password, db_name,userName,oldPassword,newPassword):
+		global globalDict
 		my_dict = {}
 		version = ""
 		className = "ChangePasswordUtil"
@@ -3302,7 +3317,7 @@ class SqlAnywhereConf(BaseDB):
 							path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
 						elif os_name == "WINDOWS":
 							path = os.path.join("%s","WEB-INF","classes","conf;%s","WEB-INF","classes","lib","*;%s","WEB-INF",";%s","META-INF",";%s","WEB-INF","lib","*;%s","WEB-INF","classes",";%s","WEB-INF","classes","META-INF;%s" )%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home ,self.SQL_CONNECTOR_JAR)
-						get_java_cmd = "%s -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,ranger_log,path,className,userName,oldPassword,newPassword)
+						get_java_cmd = "%s -XX:MetaspaceSize=100m -XX:MaxMetaspaceSize=200m -Xmx%s -Xms1g -Dlogdir=%s -Dlog4j.configuration=db_patch.log4j.xml -cp %s org.apache.ranger.patch.cliutil.%s %s %s %s -default"%(self.JAVA_BIN,globalDict['ranger_admin_max_heap_size'],ranger_log,path,className,userName,oldPassword,newPassword)
 						if is_unix:
 							status = subprocess.call(shlex.split(get_java_cmd))
 						elif os_name == "WINDOWS":
@@ -3604,6 +3619,7 @@ def main(argv):
 	db_ssl_enabled='false'
 	db_ssl_required='false'
 	db_ssl_verifyServerCertificate='false'
+	db_ssl_auth_type='2-way'
 	javax_net_ssl_keyStore=''
 	javax_net_ssl_keyStorePassword=''
 	javax_net_ssl_trustStore=''
@@ -3617,30 +3633,33 @@ def main(argv):
 					db_ssl_required=globalDict['db_ssl_required'].lower()
 				if 'db_ssl_verifyServerCertificate' in globalDict:
 					db_ssl_verifyServerCertificate=globalDict['db_ssl_verifyServerCertificate'].lower()
+				if 'db_ssl_auth_type' in globalDict:
+					db_ssl_auth_type=globalDict['db_ssl_auth_type'].lower()
 				if db_ssl_verifyServerCertificate == 'true':
-					if 'javax_net_ssl_keyStore' in globalDict:
-						javax_net_ssl_keyStore=globalDict['javax_net_ssl_keyStore']
-					if 'javax_net_ssl_keyStorePassword' in globalDict:
-						javax_net_ssl_keyStorePassword=globalDict['javax_net_ssl_keyStorePassword']
 					if 'javax_net_ssl_trustStore' in globalDict:
 						javax_net_ssl_trustStore=globalDict['javax_net_ssl_trustStore']
 					if 'javax_net_ssl_trustStorePassword' in globalDict:
 						javax_net_ssl_trustStorePassword=globalDict['javax_net_ssl_trustStorePassword']
-					if not os.path.exists(javax_net_ssl_keyStore):
-						log("[E] Invalid file Name! Unable to find keystore file:"+javax_net_ssl_keyStore,"error")
-						sys.exit(1)
 					if not os.path.exists(javax_net_ssl_trustStore):
 						log("[E] Invalid file Name! Unable to find truststore file:"+javax_net_ssl_trustStore,"error")
-						sys.exit(1)
-					if javax_net_ssl_keyStorePassword is None or javax_net_ssl_keyStorePassword =="":
-						log("[E] Invalid ssl keystore password!","error")
 						sys.exit(1)
 					if javax_net_ssl_trustStorePassword is None or javax_net_ssl_trustStorePassword =="":
 						log("[E] Invalid ssl truststore password!","error")
 						sys.exit(1)
+					if db_ssl_auth_type == '2-way':
+						if 'javax_net_ssl_keyStore' in globalDict:
+							javax_net_ssl_keyStore=globalDict['javax_net_ssl_keyStore']
+						if 'javax_net_ssl_keyStorePassword' in globalDict:
+							javax_net_ssl_keyStorePassword=globalDict['javax_net_ssl_keyStorePassword']
+						if not os.path.exists(javax_net_ssl_keyStore):
+							log("[E] Invalid file Name! Unable to find keystore file:"+javax_net_ssl_keyStore,"error")
+							sys.exit(1)
+						if javax_net_ssl_keyStorePassword is None or javax_net_ssl_keyStorePassword =="":
+							log("[E] Invalid ssl keystore password!","error")
+							sys.exit(1)
 
 		MYSQL_CONNECTOR_JAR=globalDict['SQL_CONNECTOR_JAR']
-		xa_sqlObj = MysqlConf(xa_db_host, MYSQL_CONNECTOR_JAR, JAVA_BIN,db_ssl_enabled,db_ssl_required,db_ssl_verifyServerCertificate,javax_net_ssl_keyStore,javax_net_ssl_keyStorePassword,javax_net_ssl_trustStore,javax_net_ssl_trustStorePassword)
+		xa_sqlObj = MysqlConf(xa_db_host, MYSQL_CONNECTOR_JAR, JAVA_BIN,db_ssl_enabled,db_ssl_required,db_ssl_verifyServerCertificate,javax_net_ssl_keyStore,javax_net_ssl_keyStorePassword,javax_net_ssl_trustStore,javax_net_ssl_trustStorePassword,db_ssl_auth_type)
 		xa_db_version_file = os.path.join(RANGER_ADMIN_HOME , mysql_dbversion_catalog)
 		xa_db_core_file = os.path.join(RANGER_ADMIN_HOME , mysql_core_file)
 		xa_patch_file = os.path.join(RANGER_ADMIN_HOME ,mysql_patches)
@@ -3700,7 +3719,7 @@ def main(argv):
 
 	if AUDIT_DB_FLAVOR == "MYSQL":
 		MYSQL_CONNECTOR_JAR=globalDict['SQL_CONNECTOR_JAR']
-		audit_sqlObj = MysqlConf(audit_db_host,MYSQL_CONNECTOR_JAR,JAVA_BIN,db_ssl_enabled,db_ssl_required,db_ssl_verifyServerCertificate,javax_net_ssl_keyStore,javax_net_ssl_keyStorePassword,javax_net_ssl_trustStore,javax_net_ssl_trustStorePassword)
+		audit_sqlObj = MysqlConf(audit_db_host,MYSQL_CONNECTOR_JAR,JAVA_BIN,db_ssl_enabled,db_ssl_required,db_ssl_verifyServerCertificate,javax_net_ssl_keyStore,javax_net_ssl_keyStorePassword,javax_net_ssl_trustStore,javax_net_ssl_trustStorePassword,db_ssl_auth_type)
 		audit_db_file = os.path.join(RANGER_ADMIN_HOME ,mysql_audit_file)
 
 	elif AUDIT_DB_FLAVOR == "ORACLE":

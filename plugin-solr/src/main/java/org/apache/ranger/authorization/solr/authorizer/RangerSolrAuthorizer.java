@@ -29,9 +29,12 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.security.auth.login.Configuration;
+
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.ranger.audit.provider.AuditProviderFactory;
 import org.apache.ranger.audit.provider.MiscUtil;
 import org.apache.ranger.authorization.hadoop.config.RangerConfiguration;
 import org.apache.ranger.plugin.audit.RangerMultiResourceAuditHandler;
@@ -39,6 +42,7 @@ import org.apache.ranger.plugin.policyengine.RangerAccessRequestImpl;
 import org.apache.ranger.plugin.policyengine.RangerAccessResourceImpl;
 import org.apache.ranger.plugin.policyengine.RangerAccessResult;
 import org.apache.ranger.plugin.service.RangerBasePlugin;
+import org.apache.ranger.plugin.util.RangerPerfTracer;
 import org.apache.solr.security.AuthorizationContext.RequestType;
 import org.apache.solr.security.AuthorizationPlugin;
 import org.apache.solr.security.AuthorizationResponse;
@@ -48,6 +52,7 @@ import org.apache.solr.security.AuthorizationContext.CollectionRequest;
 public class RangerSolrAuthorizer implements AuthorizationPlugin {
 	private static final Log logger = LogFactory
 			.getLog(RangerSolrAuthorizer.class);
+	private static final Log PERF_SOLRAUTH_REQUEST_LOG = RangerPerfTracer.getPerfLogger("solrauth.request");
 
 	public static final String PROP_USE_PROXY_IP = "xasecure.solr.use_proxy_ip";
 	public static final String PROP_PROXY_IP_HEADER = "xasecure.solr.proxy_ip_header";
@@ -144,6 +149,11 @@ public class RangerSolrAuthorizer implements AuthorizationPlugin {
 		logger.info("close() called");
 		try {
 			solrPlugin.cleanup();
+			/* Solr shutdown is not graceful so that JVM shutdown hooks
+			 * are not always invoked and the audit store are not flushed. So
+			 * we are forcing a cleanup here.
+			 */
+			AuditProviderFactory.getInstance().shutdown();
 		} catch (Throwable t) {
 			logger.error("Error cleaning up Ranger plugin. Ignoring error", t);
 		}
@@ -167,6 +177,12 @@ public class RangerSolrAuthorizer implements AuthorizationPlugin {
 
 			RangerMultiResourceAuditHandler auditHandler = new RangerMultiResourceAuditHandler();
 
+			RangerPerfTracer perf = null;
+
+			if(RangerPerfTracer.isPerfTraceEnabled(PERF_SOLRAUTH_REQUEST_LOG)) {
+				perf = RangerPerfTracer.getPerfTracer(PERF_SOLRAUTH_REQUEST_LOG, "RangerSolrAuthorizer.authorize()");
+			}
+
 			String userName = getUserName(context);
 			Set<String> userGroups = getGroupsForUser(userName);
 			String ip = null;
@@ -180,23 +196,38 @@ public class RangerSolrAuthorizer implements AuthorizationPlugin {
 				ip = context.getHttpHeader("REMOTE_ADDR");
 			}
 
-			// Create the list of requests for access check. Each field is
-			// broken
-			// into a request
 			List<RangerAccessRequestImpl> rangerRequests = new ArrayList<RangerAccessRequestImpl>();
-			for (CollectionRequest collectionRequest : context
-					.getCollectionRequests()) {
+			List<CollectionRequest>   collectionRequests = context.getCollectionRequests();
 
+			if (CollectionUtils.isEmpty(collectionRequests)) {
+				// if Collection is empty we set the collection to *. This happens when LIST is done.
 				RangerAccessRequestImpl requestForCollection = createRequest(
 						userName, userGroups, ip, eventTime, context,
-						collectionRequest);
+						null);
 				if (requestForCollection != null) {
 					rangerRequests.add(requestForCollection);
 				}
+			} else {
+				// Create the list of requests for access check. Each field is
+				// broken
+				// into a request
+				for (CollectionRequest collectionRequest : context
+						.getCollectionRequests()) {
+
+					RangerAccessRequestImpl requestForCollection = createRequest(
+							userName, userGroups, ip, eventTime, context,
+							collectionRequest);
+					if (requestForCollection != null) {
+						rangerRequests.add(requestForCollection);
+					}
+				}
+
 			}
+
 			if (logger.isDebugEnabled()) {
 				logger.debug("rangerRequests.size()=" + rangerRequests.size());
 			}
+
 			try {
 				// Let's check the access for each request/resource
 				for (RangerAccessRequestImpl rangerRequest : rangerRequests) {
@@ -213,6 +244,7 @@ public class RangerSolrAuthorizer implements AuthorizationPlugin {
 				}
 			} finally {
 				auditHandler.flushAudit();
+				RangerPerfTracer.log(perf);
 			}
 		} catch (Throwable t) {
 			isDenied = true;
@@ -304,25 +336,19 @@ public class RangerSolrAuthorizer implements AuthorizationPlugin {
 
 		String accessType = mapToRangerAccessType(context);
 		String action = accessType;
-
-		if (collectionRequest.collectionName != null) {
-			RangerAccessRequestImpl rangerRequest = createBaseRequest(userName,
-					userGroups, ip, eventTime);
-			RangerAccessResourceImpl rangerResource = new RangerAccessResourceImpl();
-			rangerResource.setValue(KEY_COLLECTION,
-					collectionRequest.collectionName);
-			rangerRequest.setResource(rangerResource);
-			rangerRequest.setAccessType(accessType);
-			rangerRequest.setAction(action);
-
-			return rangerRequest;
+		RangerAccessRequestImpl rangerRequest = createBaseRequest(userName,
+				userGroups, ip, eventTime);
+		RangerAccessResourceImpl rangerResource = new RangerAccessResourceImpl();
+		if (collectionRequest == null) {
+			rangerResource.setValue(KEY_COLLECTION, "*");
+		} else {
+			rangerResource.setValue(KEY_COLLECTION, collectionRequest.collectionName);
 		}
-		
-		logger.fatal("Can't create RangerRequest oject. userName="
-				+ userName + ", accessType=" + accessType + ", ip=" + ip
-				+ ", collectionRequest=" + collectionRequest);
+		rangerRequest.setResource(rangerResource);
+		rangerRequest.setAccessType(accessType);
+		rangerRequest.setAction(action);
 
-		return null;
+		return rangerRequest;
 	}
 
 	private RangerAccessRequestImpl createBaseRequest(String userName,

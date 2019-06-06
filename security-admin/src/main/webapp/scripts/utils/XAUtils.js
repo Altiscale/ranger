@@ -609,7 +609,9 @@ define(function(require) {
 	XAUtils.defaultErrorHandler = function(model, error) {
 		var App = require('App');
 		var vError = require('views/common/ErrorView');
-		if(!_.isUndefined(model) && !_.isUndefined(model.modelName) &&  model.modelName == XAEnums.ClassTypes.CLASS_TYPE_XA_ACCESS_AUDIT.modelName){
+		if(!_.isUndefined(model) && !_.isUndefined(model.modelName) 
+				&&  model.modelName == XAEnums.ClassTypes.CLASS_TYPE_XA_ACCESS_AUDIT.modelName
+				&& error.status !== 419){
 			return;
 		}
 		if (error.status == 404) {
@@ -621,7 +623,7 @@ define(function(require) {
 				status : error.status
 			}));
 		} else if (error.status == 419) {
-			window.location = 'login.jsp'
+			window.location = 'login.jsp?sessionTimeout=true';
 		}
 	};
 	XAUtils.select2Focus = function(event) {
@@ -1207,7 +1209,9 @@ define(function(require) {
 		_.each(XAEnums.UserRoles,function(val, key){
 			if(SessionMgr.isKeyAdmin() && XAEnums.UserRoles.ROLE_SYS_ADMIN.value != val.value){
 				userRoleList.push(key)
-			}else if(!SessionMgr.isKeyAdmin() && XAEnums.UserRoles.ROLE_KEY_ADMIN.value != val.value){
+			}else if(SessionMgr.isSystemAdmin() && XAEnums.UserRoles.ROLE_KEY_ADMIN.value != val.value){
+				userRoleList.push(key)
+			}else if(SessionMgr.isUser() && XAEnums.UserRoles.ROLE_USER.value == val.value){
 				userRoleList.push(key)
 			}
 		})
@@ -1248,7 +1252,7 @@ define(function(require) {
 		}
 		return window.location.origin
 		+ window.location.pathname.substring(window.location.pathname
-				.indexOf('/', 2) + 1, 0);
+				.lastIndexOf('/') + 1, 0);
 	};
 	
 	XAUtils.isMaskingPolicy = function(type){

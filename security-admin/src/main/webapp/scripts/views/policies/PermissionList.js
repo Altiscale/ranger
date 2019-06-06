@@ -185,7 +185,7 @@ define(function(require) {
                 createDropDown :function($select, typeGroup){
                         var that = this, tags = [],
 			placeholder = (typeGroup) ? 'Select Group' : 'Select User',
-                        searchUrl   = (typeGroup) ? "service/xusers/groups" : "service/xusers/users";
+                                        searchUrl   = (typeGroup) ? "service/xusers/lookup/groups" : "service/xusers/lookup/users";
 			if(this.model.has('editMode') && !_.isEmpty($select.val())){
                                 var temp = this.model.attributes[ (typeGroup) ? 'groupName': 'userName'];
 				_.each(temp , function(name){
@@ -211,11 +211,11 @@ define(function(require) {
 						var results = [] , selectedVals = [];
 						//Get selected values of groups/users dropdown
 						selectedVals = that.getSelectedValues($select, typeGroup);
-						if(data.resultSize != "0"){
+                                                if(data.totalCount != "0"){
 							if(typeGroup){
-                                                                results = data.vXGroups.map(function(m, i){	return {id : _.escape(m.name), text: _.escape(m.name) };	});
+                                                                results = data.vXStrings.map(function(m){	return {id : _.escape(m.value), text: _.escape(m.value) };	});
 							} else {
-                                                                results = data.vXUsers.map(function(m, i){	return {id : _.escape(m.name), text: _.escape(m.name) };	});
+                                                                results = data.vXStrings.map(function(m){	return {id : _.escape(m.value), text: _.escape(m.value) };	});
 							}
 							if(!_.isEmpty(selectedVals)){
 								results = XAUtil.filterResultByText(results, selectedVals);
@@ -223,6 +223,14 @@ define(function(require) {
 							return {results : results};
 						}
 						return {results : results};
+                                        },
+                                        transport: function (options) {
+                                                $.ajax(options).error(function(respones) {
+                                                        XAUtil.defaultErrorHandler('error',respones);
+                                                        this.success({
+                                                                resultSize : 0
+                                                        });
+                                                });
 					}
 				},	
 				formatResult : function(result){
@@ -239,12 +247,8 @@ define(function(require) {
 		renderPerms :function(){
 			var that = this;
 			this.perms =  _.map(this.accessTypes,function(m){return {text:m.label, value:m.name};});
-			this.perms.push({'value' : -1, 'text' : 'Select/Deselect All'});
-			//set default access type 'select' for add new masking & row filter policies
-			if(this.perms.length == 2){
-				if(!_.isUndefined(this.perms[0].value) && _.isEmpty(this.permsIds)){
-					this.permsIds.push(this.perms[0].value);	
-				}
+			if(this.perms.length > 1){
+				this.perms.push({'value' : -1, 'text' : 'Select/Deselect All'});
 			}
 			//create x-editable for permissions
 			this.ui.addPerms.editable({
@@ -273,11 +277,6 @@ define(function(require) {
 							return "<span class='label label-info'>" + obj.text + "</span>";
 						}
 					});
-					var perms = []
-					if(that.model.has('accesses')){
-							perms = that.model.get('accesses');
-					}
-					
 					var items=[];
 					_.each(that.accessItems, function(item){ 
 						if($.inArray( item.type, values) >= 0){
@@ -310,10 +309,6 @@ define(function(require) {
 			this.ui.addPerms.attr('title','Components Permissions')
 			this.ui.delegatedAdmin.parent('td').hide();
 			this.perms =  _.map(this.accessTypes,function(m){return {text:m.label, value:m.name};});
-			//select defatult access type if single component exists
-			if(this.perms.length == 1 && this.permsIds.length >= 0){
-				this.permsIds.push(this.perms[0].value)
-			}
 			var select2optn = { width :'600px' };
 			if(XAUtil.isMaskingPolicy(this.rangerPolicyType)){
 				select2optn = {width :'600px' , maximumSelectionSize : 1 };
@@ -357,11 +352,6 @@ define(function(require) {
 							return "<span class='label label-info'>" + id.substr(0,id.indexOf(":")).toUpperCase() + "</span>";
 						}
 					});
-					var perms = []
-					if(that.model.has('accesses')){
-							perms = that.model.get('accesses');
-					}
-					
 					var items=[];
 					_.each(that.accessItems, function(item){ 
 						if($.inArray( item.type, values) >= 0){
@@ -485,7 +475,7 @@ define(function(require) {
 			});
 			this.$el.find('input[data-id="maskTypeCustom"]').on('change', function(e){
 				if(!_.isUndefined(that.model.get('dataMaskInfo'))){
-					that.model.get('dataMaskInfo').valueExpr = e.currentTarget.value;
+                                        that.model.get('dataMaskInfo').valueExpr = (e.currentTarget.value);
 				}
 			}).trigger('change');
 			if(!this.accessPermSetForTagMasking){
@@ -540,7 +530,7 @@ define(function(require) {
 					emptytext : 'Add Conditions',
 					value : this.conditions,
 					display: function(value) {
-						var continue_ = false, i = 0;
+						var continue_ = false, i = 0, cond = [];
 						if(!value) {
 							$(this).empty();
 							return; 
@@ -555,19 +545,18 @@ define(function(require) {
 									return ''; 
 								}
 								//Add label for policy condition
-								var pcond = _.findWhere(that.multiLinecond, { 'name': name})
+								var pcond = _.findWhere(that.multiLinecond, { 'name': name});
 								if(!_.isUndefined(pcond) && !_.isUndefined(pcond['evaluatorOptions']) 
 										&& ! _.isUndefined(pcond['evaluatorOptions']["ui.isMultiline"]) 
 										&& ! _.isUndefined(pcond['evaluatorOptions']['engineName'])){
-									val = 	pcond['evaluatorOptions']['engineName'] + ' Condition'
+									cond.push({ 'type' : name, 'values' : !_.isArray(val) ? [val] : val });
+									val = 	pcond['evaluatorOptions']['engineName'] + ' Condition';
+								} else {
+									cond.push({ 'type' : name, 'values' : !_.isArray(val) ?  val.split(',') : val });
 								}
 								i++;
-                                                                return '<span class="'+label+' white-space-normal" >'+name+' : '+ _.escape(val) + '</span>';
+                                return '<span class="'+label+' white-space-normal" >'+name+' : '+ _.escape(val) + '</span>';
 							});
-							var cond = _.map(value, function(val, name) {
-                                                                return {'type' : name, 'values' : !_.isArray(val) ?  val.split(',') : val};
-							});
-							
 							that.model.set('conditions', cond);
 							$(this).html(html);
 							that.ui.addConditionsSpan.find('i').attr('class', 'icon-pencil');
@@ -707,6 +696,7 @@ define(function(require) {
 						$(this).siblings('[data-id="maskTypeCustom"]').css("display","");
 					}else{
 						$(this).siblings('[data-id="maskTypeCustom"]').css("display","none");
+                                                $(this).siblings('[data-id="maskTypeCustom"]').val(" ")
 					}
 					
 					$(this).html("<span class='label label-info'>" + obj.text + "</span>");
@@ -723,7 +713,7 @@ define(function(require) {
 			});
 			this.$el.find('input[data-id="maskTypeCustom"]').on('change', function(e){
 				if(!_.isUndefined(that.model.get('dataMaskInfo'))){
-					that.model.get('dataMaskInfo').valueExpr = e.currentTarget.value;
+                                        that.model.get('dataMaskInfo').valueExpr = (e.currentTarget.value);
 				}
 			}).trigger('change');
 		},

@@ -128,7 +128,7 @@ define(function(require){
 			var el = $(e.currentTarget), serviceType = el.attr('data-servicetype');
 			if(serviceType){
 				var componentServices = this.services.where({'type' : serviceType });
-	            if(serviceType !== undefined && componentServices.length == 0 ){
+                    if(componentServices.length == 0 ){
 	            	XAUtil.alertBoxWithTimeSet(localization.tt('msg.noServiceToExport'));
 	            	return;
 	            }
@@ -176,7 +176,7 @@ define(function(require){
 		    var el = $(e.currentTarget), serviceType = el.attr('data-servicetype');
 			if(serviceType){
 				var componentServices = this.services.where({'type' : serviceType });
-	            if(serviceType !== undefined && componentServices.length == 0 ){
+                    if(componentServices.length == 0 ){
 	            	XAUtil.alertBoxWithTimeSet(localization.tt('msg.noServiceToImport'));
 	            	return;
 	            }	
@@ -231,7 +231,7 @@ define(function(require){
 							},
 							error :function(model, response) {
 								XAUtil.blockUI('unblock');
-								if(!_.isUndefined(response) && !_.isUndefined(response.responseJSON) && !_.isUndefined(response.responseJSON.msgDesc)){
+                                                                if(!_.isUndefined(response) && !_.isUndefined(response.responseJSON) && !_.isUndefined(response.responseJSON.msgDesc && response.status !='419')){
 									XAUtil.notifyError('Error', response.responseJSON.msgDesc);
 								}
 							}

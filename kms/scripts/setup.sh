@@ -66,6 +66,7 @@ db_password=$(get_prop 'db_password' $PROPFILE)
 db_ssl_enabled=$(get_prop 'db_ssl_enabled' $PROPFILE)
 db_ssl_required=$(get_prop 'db_ssl_required' $PROPFILE)
 db_ssl_verifyServerCertificate=$(get_prop 'db_ssl_verifyServerCertificate' $PROPFILE)
+db_ssl_auth_type=$(get_prop 'db_ssl_auth_type' $PROPFILE)
 KMS_MASTER_KEY_PASSWD=$(get_prop 'KMS_MASTER_KEY_PASSWD' $PROPFILE)
 unix_user=$(get_prop 'unix_user' $PROPFILE)
 unix_group=$(get_prop 'unix_group' $PROPFILE)
@@ -96,6 +97,15 @@ HSM_TYPE=$(get_prop 'HSM_TYPE' $PROPFILE)
 HSM_ENABLED=$(get_prop 'HSM_ENABLED' $PROPFILE)
 HSM_PARTITION_NAME=$(get_prop 'HSM_PARTITION_NAME' $PROPFILE)
 HSM_PARTITION_PASSWORD=$(get_prop 'HSM_PARTITION_PASSWORD' $PROPFILE)
+
+KEYSECURE_ENABLED=$(get_prop 'KEYSECURE_ENABLED' $PROPFILE)
+KEYSECURE_USER_PASSWORD_AUTHENTICATION=$(get_prop 'KEYSECURE_USER_PASSWORD_AUTHENTICATION' $PROPFILE)
+KEYSECURE_MASTERKEY_NAME=$(get_prop 'KEYSECURE_MASTERKEY_NAME' $PROPFILE)
+KEYSECURE_USERNAME=$(get_prop 'KEYSECURE_USERNAME' $PROPFILE)
+KEYSECURE_PASSWORD=$(get_prop 'KEYSECURE_PASSWORD' $PROPFILE)
+KEYSECURE_HOSTNAME=$(get_prop 'KEYSECURE_HOSTNAME' $PROPFILE)
+KEYSECURE_MASTER_KEY_SIZE=$(get_prop 'KEYSECURE_MASTER_KEY_SIZE' $PROPFILE)
+KEYSECURE_LIB_CONFIG_PATH=$(get_prop 'KEYSECURE_LIB_CONFIG_PATH' $PROPFILE)
 
 kms_principal=$(get_prop 'kms_principal' $PROPFILE)
 kms_keytab=$(get_prop 'kms_keytab' $PROPFILE)
@@ -209,6 +219,17 @@ password_validation() {
                 fi
         fi
 }
+
+password_validation_safenet_keysecure(){
+        if [ -z "$1" ]
+        then
+                log "[I] Blank password is not allowed for" $2". Please enter valid password."
+                exit 1
+        else
+                log "[I]" $2 "password validated."
+        fi
+}
+
 init_variables(){
 	curDt=`date '+%Y%m%d%H%M%S'`
 
@@ -270,11 +291,13 @@ init_variables(){
 		db_ssl_enabled="false"
 		db_ssl_required="false"
 		db_ssl_verifyServerCertificate="false"
+                db_ssl_auth_type="2-way"
 	fi
 	if [ "${db_ssl_enabled}" == "true" ]
 	then
 		db_ssl_required=`echo $db_ssl_required | tr '[:upper:]' '[:lower:]'`
 		db_ssl_verifyServerCertificate=`echo $db_ssl_verifyServerCertificate | tr '[:upper:]' '[:lower:]'`
+                db_ssl_auth_type=`echo $db_ssl_auth_type | tr '[:upper:]' '[:lower:]'`
 		if [ "${db_ssl_required}" != "true" ]
 		then
 			db_ssl_required="false"
@@ -283,6 +306,10 @@ init_variables(){
 		then
 			db_ssl_verifyServerCertificate="false"
 		fi
+                if [ "${db_ssl_auth_type}" != "1-way" ]
+                then
+                        db_ssl_auth_type="2-way"
+                fi
 	fi
 }
 
@@ -448,17 +475,21 @@ update_properties() {
 
 	if [ "${db_ssl_enabled}" != "" ]
 	then
-		propertyName=ranger.db.ssl.enabled
+                propertyName=ranger.ks.db.ssl.enabled
 		newPropertyValue="${db_ssl_enabled}"
 		updatePropertyToFilePy $propertyName $newPropertyValue $to_file
 
-		propertyName=ranger.db.ssl.required
+                propertyName=ranger.ks.db.ssl.required
 		newPropertyValue="${db_ssl_required}"
 		updatePropertyToFilePy $propertyName $newPropertyValue $to_file
 
-		propertyName=ranger.db.ssl.verifyServerCertificate
+                propertyName=ranger.ks.db.ssl.verifyServerCertificate
 		newPropertyValue="${db_ssl_verifyServerCertificate}"
 		updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.ks.db.ssl.auth.type
+                newPropertyValue="${db_ssl_auth_type}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
 	fi
 
 	if [ "${DB_FLAVOR}" == "MYSQL" ]
@@ -563,7 +594,11 @@ update_properties() {
 	HSM_PARTITION_PASSWD="ranger.ks.hsm.partition.password"
 	HSM_PARTITION_PASSWORD_ALIAS="ranger.kms.hsm.partition.password"
 
+        KEYSECURE_PASSWD="ranger.kms.keysecure.login.password"
+        KEYSECURE_PASSWORD_ALIAS="ranger.ks.login.password"
+
         HSM_ENABLED=`echo $HSM_ENABLED | tr '[:lower:]' '[:upper:]'`
+        KEYSECURE_ENABLED=`echo $KEYSECURE_ENABLED | tr '[:lower:]' '[:upper:]'`
 
 	if [ "${keystore}" != "" ]
 	then
@@ -585,6 +620,20 @@ update_properties() {
                         updatePropertyToFilePy $propertyName $newPropertyValue $to_file
                        
                         propertyName=ranger.ks.hsm.partition.password
+                        newPropertyValue="_"
+                        updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+                fi
+
+                if [ "${KEYSECURE_ENABLED}" == "TRUE" ]
+                then
+                        password_validation_safenet_keysecure "$KEYSECURE_PASSWORD" "KEYSECURE User Password"
+                        $PYTHON_COMMAND_INVOKER ranger_credential_helper.py -l "cred/lib/*" -f "$keystore" -k "${KEYSECURE_PASSWORD_ALIAS}" -v "${KEYSECURE_PASSWORD}" -c 1
+
+                        propertyName=ranger.kms.keysecure.login.password.alias
+                        newPropertyValue="${KEYSECURE_PASSWORD_ALIAS}"
+                        updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                        propertyName=ranger.kms.keysecure.login.password
                         newPropertyValue="_"
                         updatePropertyToFilePy $propertyName $newPropertyValue $to_file
                 fi
@@ -619,6 +668,10 @@ update_properties() {
 
 		propertyName="${HSM_PARTITION_PASSWD}"
                 newPropertyValue="${HSM_PARTITION_PASSWORD}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName="${KEYSECURE_PASSWD}"
+                newPropertyValue="${KEYSECURE_PASSWORD}"
                 updatePropertyToFilePy $propertyName $newPropertyValue $to_file
 	fi
 
@@ -682,6 +735,45 @@ update_properties() {
                 propertyName=ranger.ks.hsm.partition.name
                 newPropertyValue="${HSM_PARTITION_NAME}"
                 updatePropertyToFilePy $propertyName $newPropertyValue $to_file         
+        fi
+
+        ########### SAFENET KEYSECURE CONFIG #################
+
+
+        if [ "${KEYSECURE_ENABLED}" != "TRUE" ]
+        then
+                propertyName=ranger.kms.keysecure.enabled
+                newPropertyValue="false"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+        else
+                propertyName=ranger.kms.keysecure.enabled
+                newPropertyValue="true"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.kms.keysecure.UserPassword.Authentication
+                newPropertyValue="${KEYSECURE_USER_PASSWORD_AUTHENTICATION}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.kms.keysecure.masterkey.name
+                newPropertyValue="${KEYSECURE_MASTERKEY_NAME}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.kms.keysecure.login.username
+                newPropertyValue="${KEYSECURE_USERNAME}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.kms.keysecure.hostname
+                newPropertyValue="${KEYSECURE_HOSTNAME}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.kms.keysecure.masterkey.size
+                newPropertyValue="${KEYSECURE_MASTER_KEY_SIZE}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
+                propertyName=ranger.kms.keysecure.sunpkcs11.cfg.filepath
+                newPropertyValue="${KEYSECURE_LIB_CONFIG_PATH}"
+                updatePropertyToFilePy $propertyName $newPropertyValue $to_file
+
         fi
 
 	to_file_kms_site=$PWD/ews/webapp/WEB-INF/classes/conf/ranger-kms-site.xml
@@ -891,7 +983,12 @@ setup_install_files(){
 
 	if [ "${db_ssl_verifyServerCertificate}" == "true" ]
 	then
-		DB_SSL_PARAM="' -Djavax.net.ssl.keyStore=${javax_net_ssl_keyStore} -Djavax.net.ssl.keyStorePassword=${javax_net_ssl_keyStorePassword} -Djavax.net.ssl.trustStore=${javax_net_ssl_trustStore} -Djavax.net.ssl.trustStorePassword=${javax_net_ssl_trustStorePassword} '"
+                if [ "${db_ssl_auth_type}" == "1-way" ]
+                then
+                        DB_SSL_PARAM="' -Djavax.net.ssl.trustStore=${javax_net_ssl_trustStore} -Djavax.net.ssl.trustStorePassword=${javax_net_ssl_trustStorePassword} '"
+                else
+                        DB_SSL_PARAM="' -Djavax.net.ssl.keyStore=${javax_net_ssl_keyStore} -Djavax.net.ssl.keyStorePassword=${javax_net_ssl_keyStorePassword} -Djavax.net.ssl.trustStore=${javax_net_ssl_trustStore} -Djavax.net.ssl.trustStorePassword=${javax_net_ssl_trustStorePassword} '"
+                fi
 		echo "export DB_SSL_PARAM=${DB_SSL_PARAM}" > ${WEBAPP_ROOT}/WEB-INF/classes/conf/ranger-kms-env-dbsslparam.sh
         chmod a+rx ${WEBAPP_ROOT}/WEB-INF/classes/conf/ranger-kms-env-dbsslparam.sh
     else

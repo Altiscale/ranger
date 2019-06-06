@@ -17,9 +17,11 @@
  * under the License.
  */
 
- package org.apache.ranger.rest;
+package org.apache.ranger.rest;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.DELETE;
@@ -31,15 +33,20 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 
+import org.apache.log4j.Logger;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.ranger.biz.RangerBizUtil;
 import org.apache.ranger.biz.SessionMgr;
 import org.apache.ranger.biz.XUserMgr;
+import org.apache.ranger.common.ContextUtil;
 import org.apache.ranger.common.MessageEnums;
 import org.apache.ranger.common.RESTErrorUtil;
+import org.apache.ranger.common.RangerConstants;
 import org.apache.ranger.common.SearchCriteria;
 import org.apache.ranger.common.SearchUtil;
 import org.apache.ranger.common.StringUtil;
+import org.apache.ranger.common.UserSessionBase;
 import org.apache.ranger.common.annotation.RangerAnnotationClassName;
 import org.apache.ranger.common.annotation.RangerAnnotationJSMgrName;
 import org.apache.ranger.db.RangerDaoManager;
@@ -146,6 +153,11 @@ public class XUserREST {
 	@Autowired
 	XResourceService xResourceService;
 
+        @Autowired
+        StringUtil stringUtil;
+
+        static final Logger logger = Logger.getLogger(XUserMgr.class);
+
 	// Handle XGroup
 	@GET
 	@Path("/groups/{id}")
@@ -238,8 +250,7 @@ public class XUserREST {
 				request, xGroupService.sortFields);
 		searchUtil.extractString(request, searchCriteria, "name", "group name", null);
 		searchUtil.extractInt(request, searchCriteria, "isVisible", "Group Visibility");
-		searchUtil.extractString(request, searchCriteria, "groupSource", "group source", null);
-//		searchUtil.extractInt(request, searchCriteria, "groupSource", "group source");
+                searchUtil.extractInt(request, searchCriteria, "groupSource", "group source");
 		return xUserMgr.searchXGroups(searchCriteria);
 	}
 
@@ -346,18 +357,52 @@ public class XUserREST {
 	@Produces({ "application/xml", "application/json" })
 	@PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.SEARCH_X_USERS + "\")")
 	public VXUserList searchXUsers(@Context HttpServletRequest request) {
+		String UserRoleParamName = RangerConstants.ROLE_USER;
 		SearchCriteria searchCriteria = searchUtil.extractCommonCriterias(
 				request, xUserService.sortFields);
-
+		String userName = null;
+		if (request.getUserPrincipal() != null){
+			userName = request.getUserPrincipal().getName();
+		}
 		searchUtil.extractString(request, searchCriteria, "name", "User name",null);
 		searchUtil.extractString(request, searchCriteria, "emailAddress", "Email Address",
 				null);		
 		searchUtil.extractInt(request, searchCriteria, "userSource", "User Source");
 		searchUtil.extractInt(request, searchCriteria, "isVisible", "User Visibility");
 		searchUtil.extractInt(request, searchCriteria, "status", "User Status");
-		searchUtil.extractStringList(request, searchCriteria, "userRoleList", "User Role List", "userRoleList", null,
+		List<String> userRolesList = searchUtil.extractStringList(request, searchCriteria, "userRoleList", "User Role List", "userRoleList", null,
 				null);
 		searchUtil.extractString(request, searchCriteria, "userRole", "UserRole", null);
+		if (CollectionUtils.isNotEmpty(userRolesList) && CollectionUtils.size(userRolesList) == 1 && userRolesList.get(0).equalsIgnoreCase(UserRoleParamName)) {
+			if (!(searchCriteria.getParamList().containsKey("name"))) {
+				searchCriteria.addParam("name", userName);
+			}
+			else if ((searchCriteria.getParamList().containsKey("name")) && userName!= null && userName.contains((String) searchCriteria.getParamList().get("name"))) {
+				searchCriteria.addParam("name", userName);
+			}
+                }
+
+                UserSessionBase userSession = ContextUtil.getCurrentUserSession();
+                if (userSession != null && userSession.getLoginId() != null) {
+                        VXUser loggedInVXUser = xUserService.getXUserByUserName(userSession
+                                        .getLoginId());
+                        if (loggedInVXUser != null) {
+                                if (loggedInVXUser.getUserRoleList().size() == 1
+                                                && loggedInVXUser.getUserRoleList().contains(
+                                                                RangerConstants.ROLE_USER)) {
+                                        logger.info("Logged-In user having user role will be able to fetch his own user details.");
+                                        if (!searchCriteria.getParamList().containsKey("name")) {
+                                                searchCriteria.addParam("name", loggedInVXUser.getName());
+                                        }else if(searchCriteria.getParamList().containsKey("name")
+                                                        && !stringUtil.isEmpty(searchCriteria.getParamValue("name").toString())
+                                                        && !searchCriteria.getParamValue("name").toString().equalsIgnoreCase(loggedInVXUser.getName())){
+                                                throw restErrorUtil.create403RESTException("Logged-In user is not allowed to access requested user data.");
+                                        }
+
+                                }
+			}
+		}
+
 		return xUserMgr.searchXUsers(searchCriteria);
 	}
 
@@ -1026,6 +1071,7 @@ public class XUserREST {
 		return vXStringList;
 	}
 
+
 	@DELETE
 	@Path("/secure/users/delete")
 	@Produces({ "application/xml", "application/json" })
@@ -1045,6 +1091,7 @@ public class XUserREST {
 			}
 		}
 	}
+
 
 	@DELETE
 	@Path("/secure/groups/delete")
@@ -1066,4 +1113,125 @@ public class XUserREST {
 			}
 		}
 	}
+
+        @DELETE
+        @Path("/secure/users/{userName}")
+        @Produces({ "application/xml", "application/json" })
+        @PreAuthorize("hasRole('ROLE_SYS_ADMIN')")
+        public void deleteSingleUserByUserName(@Context HttpServletRequest request, @PathParam("userName") String userName) {
+                String forceDeleteStr = request.getParameter("forceDelete");
+                boolean forceDelete = false;
+                if (StringUtils.isNotEmpty(forceDeleteStr) && "true".equalsIgnoreCase(forceDeleteStr)) {
+                        forceDelete = true;
+                }
+
+                if (StringUtils.isNotEmpty(userName)) {
+                        VXUser vxUser = xUserService.getXUserByUserName(userName);
+                        xUserMgr.deleteXUser(vxUser.getId(), forceDelete);
+                }
+        }
+
+        @DELETE
+        @Path("/secure/groups/{groupName}")
+        @Produces({ "application/xml", "application/json" })
+        @PreAuthorize("hasRole('ROLE_SYS_ADMIN')")
+        public void deleteSingleGroupByGroupName(@Context HttpServletRequest request, @PathParam("groupName") String groupName) {
+                String forceDeleteStr = request.getParameter("forceDelete");
+                boolean forceDelete = false;
+                if (StringUtils.isNotEmpty(forceDeleteStr) && "true".equalsIgnoreCase(forceDeleteStr)) {
+                        forceDelete = true;
+                }
+                if (StringUtils.isNotEmpty(groupName)) {
+                        VXGroup vxGroup = xGroupService.getGroupByGroupName(groupName.trim());
+                        xUserMgr.deleteXGroup(vxGroup.getId(), forceDelete);
+                }
+        }
+
+        @DELETE
+        @Path("/secure/users/id/{userId}")
+        @Produces({ "application/xml", "application/json" })
+        @PreAuthorize("hasRole('ROLE_SYS_ADMIN')")
+        public void deleteSingleUserByUserId(@Context HttpServletRequest request, @PathParam("userId") Long userId) {
+                String forceDeleteStr = request.getParameter("forceDelete");
+                boolean forceDelete = false;
+                if (StringUtils.isNotEmpty(forceDeleteStr) && "true".equalsIgnoreCase(forceDeleteStr)) {
+                        forceDelete = true;
+                }
+                if (userId != null) {
+                        xUserMgr.deleteXUser(userId, forceDelete);
+                }
+        }
+
+        @DELETE
+        @Path("/secure/groups/id/{groupId}")
+        @Produces({ "application/xml", "application/json" })
+        @PreAuthorize("hasRole('ROLE_SYS_ADMIN')")
+        public void deleteSingleGroupByGroupId(@Context HttpServletRequest request, @PathParam("groupId") Long groupId) {
+                String forceDeleteStr = request.getParameter("forceDelete");
+                boolean forceDelete = false;
+                if (StringUtils.isNotEmpty(forceDeleteStr) && "true".equalsIgnoreCase(forceDeleteStr)) {
+                        forceDelete = true;
+                }
+                if (groupId != null) {
+                        xUserMgr.deleteXGroup(groupId, forceDelete);
+                }
+        }
+        
+	@GET
+	@Path("/lookup/users")
+	@Produces({ "application/xml", "application/json" })
+	@PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.GET_USERS_LOOKUP + "\")")
+	public VXStringList getUsersLookup(@Context HttpServletRequest request) {
+		SearchCriteria searchCriteria = searchUtil.extractCommonCriterias(request, xUserService.sortFields);
+		VXStringList ret = new VXStringList();
+		List<VXString> vXList = new ArrayList<>();
+		searchUtil.extractString(request, searchCriteria, "name", "User name", null);
+		searchUtil.extractInt(request, searchCriteria, "isVisible", "User Visibility");
+		try {
+			VXUserList vXUserList = xUserMgr.searchXUsers(searchCriteria);
+			VXString VXString = null;
+			for (VXUser vxUser : vXUserList.getList()) {
+				VXString = new VXString();
+				VXString.setValue(vxUser.getName());
+				vXList.add(VXString);
+			}
+			ret.setVXStrings(vXList);
+			ret.setPageSize(vXUserList.getPageSize());
+			ret.setTotalCount(vXUserList.getTotalCount());
+			ret.setSortType(vXUserList.getSortType());
+			ret.setSortBy(vXUserList.getSortBy());
+		} catch (Throwable excp) {
+			throw restErrorUtil.createRESTException(excp.getMessage());
+		}
+		return ret;
+	}
+
+	@GET
+	@Path("/lookup/groups")
+	@Produces({ "application/xml", "application/json" })
+	@PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.GET_GROUPS_LOOKUP + "\")")
+	public VXStringList getGroupsLookup(@Context HttpServletRequest request) {
+		VXStringList ret = new VXStringList();
+		SearchCriteria searchCriteria = searchUtil.extractCommonCriterias(request, xGroupService.sortFields);
+		List<VXString> vXList = new ArrayList<>();
+		searchUtil.extractString(request, searchCriteria, "name", "group name", null);
+		searchUtil.extractInt(request, searchCriteria, "isVisible", "Group Visibility");
+		try {
+			VXGroupList vXGroupList = xUserMgr.lookupXGroups(searchCriteria);
+			for (VXGroup vxGroup : vXGroupList.getList()) {
+				VXString VXString = new VXString();
+				VXString.setValue(vxGroup.getName());
+				vXList.add(VXString);
+			}
+			ret.setVXStrings(vXList);
+			ret.setPageSize(vXGroupList.getPageSize());
+			ret.setTotalCount(vXGroupList.getTotalCount());
+			ret.setSortType(vXGroupList.getSortType());
+			ret.setSortBy(vXGroupList.getSortBy());
+		} catch (Throwable excp) {
+			throw restErrorUtil.createRESTException(excp.getMessage());
+		}
+		return ret;
+	}
+        
 }

@@ -91,9 +91,10 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		config = UserGroupSyncConfig.getInstance();	
 		ldapBuilder = new LdapUserGroupBuilder();
 	}
-
+	
 	@Test
 	public void testUpdateSinkTotalUsers() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -103,6 +104,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		config.setGroupSearchEnabled(false);
 		config.setPagedResultsEnabled(true);
 		config.setGroupSearchFirstEnabled(false);
+		//config.setGroupHierarchyLevel(0);
 		ldapBuilder.init();
 		PolicyMgrUserGroupBuilderTest sink = new PolicyMgrUserGroupBuilderTest();
 		sink.init();
@@ -112,6 +114,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkWithoutPagedResults() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -121,6 +124,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		config.setGroupSearchEnabled(false);
 		config.setPagedResultsEnabled(false);
 		config.setGroupSearchFirstEnabled(false);
+		//config.setGroupHierarchyLevel(0);
 		ldapBuilder.init();
 		PolicyMgrUserGroupBuilderTest sink = new PolicyMgrUserGroupBuilderTest();
 		sink.init();
@@ -130,6 +134,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkUserFilter() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		//config.setUserSearchFilter("(|(memberof=cn=usersGroup9,ou=Group,dc=openstacklocal)(memberof=cn=usersGroup4,ou=Group,dc=openstacklocal))");
 		config.setUserSearchFilter("(|(memberof=CN=Group10,OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com)(memberof=CN=Group11,OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com))");
@@ -148,6 +153,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkTotalGroups() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -166,6 +172,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkGroupFilter() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -184,6 +191,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkGroupSearchDisable() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -202,6 +210,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkMultipleOUs() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -221,6 +230,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkMultipleOUsNoGroupSearch() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -240,6 +250,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testMultipleOUGroupsNoGroupSearch() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -259,6 +270,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testMultipleOUGroupsWithGroupSearch() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -278,6 +290,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkMultipleOUGroups() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -297,6 +310,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testGroupBasedAllUsers() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -306,11 +320,12 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		config.setGroupObjectClass("groupOfNames");
 		config.setGroupSearchEnabled(true);
 		config.setGroupSearchFirstEnabled(true);
+		config.setUserSearchEnabled(false);
 		ldapBuilder.init();
 		PolicyMgrUserGroupBuilderTest sink = new PolicyMgrUserGroupBuilderTest();
 		sink.init();
 		ldapBuilder.updateSink(sink);
-		assertEquals(2, sink.getTotalUsers());
+		assertEquals(3, sink.getTotalUsers());
 		assertEquals(2, sink.getTotalGroups());
 	}
 
@@ -336,6 +351,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testGroupBasedWithNoUsers() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -356,6 +372,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testGroupBasedWithAllUsersAndGroups() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -375,6 +392,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testGroupBasedWithSingleOU() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -395,6 +413,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkWithEmptyUserSearchBase() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -413,6 +432,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testGBWithUserSearchDisabled() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=User*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -427,12 +447,13 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		PolicyMgrUserGroupBuilderTest sink = new PolicyMgrUserGroupBuilderTest();
 		sink.init();
 		ldapBuilder.updateSink(sink);
-		assertEquals(2, sink.getTotalUsers());
+		assertEquals(3, sink.getTotalUsers());
 		assertEquals(2, sink.getTotalGroups());
 	}
 
 	@Test
 	public void testGBWithNoUsersAndUserSearchDisabled() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -453,6 +474,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkShortUserName() throws Throwable {
+		config.setUserNameAttribute("cn");
 		config.setUserSearchBase("ou=people,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("uid=*");
 		config.setUserObjectClass("posixAccount");
@@ -473,6 +495,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testShortUserNameWithGroupBased() throws Throwable {
+		config.setUserNameAttribute("cn");
 		config.setUserSearchBase("ou=people,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("uid=*");
 		config.setUserObjectClass("posixAccount");
@@ -493,6 +516,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testUpdateSinkWithUserGroupMapping() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -525,6 +549,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 	
 	@Test
 	public void testGBWithInvalidOU() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=User*");
 		config.setGroupSearchBase("OU=HdpGroup1,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -539,12 +564,13 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		PolicyMgrUserGroupBuilderTest sink = new PolicyMgrUserGroupBuilderTest();
 		sink.init();
 		ldapBuilder.updateSink(sink);
-		assertEquals(1, sink.getTotalUsers());
+		assertEquals(2, sink.getTotalUsers());
 		assertEquals(1, sink.getTotalGroups());
 	}
 	
 	@Test
 	public void testMultipleOUInvalidOU() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers1,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups1,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -564,6 +590,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 	
 	@Test
 	public void testDeltaUpdateSinkTotalGroups() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("");
 		config.setGroupSearchBase("OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -585,6 +612,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 	
 	@Test
 	public void testDeltaUpdateSinkMultipleOUGroups() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("cn=users,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;ou=BusinessUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -606,6 +634,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 	
 	@Test
 	public void testDeltaGroupBasedWithUserFilter() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=User*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -628,6 +657,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 
 	@Test
 	public void testDeltaGroupBasedWithNoUsers() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -650,6 +680,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 	
 	@Test
 	public void testDeltaGBWithUserSearchDisabled() throws Throwable {
+		config.setUserNameAttribute("sAMAccountName");
 		config.setUserSearchBase("DC=ranger,DC=qe,DC=hortonworks,DC=com;");
 		config.setUserSearchFilter("cn=User*");
 		config.setGroupSearchBase("OU=HdpGroups,OU=HadoopUsers,DC=ranger,DC=qe,DC=hortonworks,DC=com;OU=Groups,DC=ranger,DC=qe,DC=hortonworks,DC=com");
@@ -666,7 +697,7 @@ public class TestLdapUserGroup extends AbstractLdapTestUnit{
 		LdapPolicyMgrUserGroupBuilderTest sink = new LdapPolicyMgrUserGroupBuilderTest();
 		sink.init();
 		ldapBuilder.updateSink(sink);
-		assertEquals(2, sink.getTotalUsers());
+		assertEquals(3, sink.getTotalUsers());
 		assertEquals(2, sink.getTotalGroups());
 	}
 

@@ -83,6 +83,7 @@ public class TagSyncConfig extends Configuration {
 
 	private static final String TAGSYNC_SOURCE_RETRY_INITIALIZATION_INTERVAL_PROP = "ranger.tagsync.source.retry.initialization.interval.millis";
 
+	public static final String TAGSYNC_RANGER_COOKIE_ENABLED_PROP = "ranger.tagsync.cookie.enabled";
 	private static final String DEFAULT_TAGADMIN_USERNAME = "rangertagsync";
 	private static final String DEFAULT_TAGADMIN_PASSWORD = "rangertagsync";
 	private static final String DEFAULT_ATLASREST_USERNAME = "admin";
@@ -97,6 +98,8 @@ public class TagSyncConfig extends Configuration {
 	private static final String NAME_RULES = "hadoop.security.auth_to_local";
 	private static final String TAGSYNC_KERBEROS_PRICIPAL = "ranger.tagsync.kerberos.principal";
 	private static final String TAGSYNC_KERBEROS_KEYTAB = "ranger.tagsync.kerberos.keytab";
+
+	public static final String TAGSYNC_KERBEROS_IDENTITY = "tagsync.kerberos.identity";
 
 	private static String LOCAL_HOSTNAME = "unknown";
 
@@ -203,7 +206,12 @@ public class TagSyncConfig extends Configuration {
 
 	static public boolean isTagSyncEnabled(Properties prop) {
 		String val = prop.getProperty(TAGSYNC_ENABLED_PROP);
-		return !(val != null && val.trim().equalsIgnoreCase("false"));
+		return val == null || Boolean.valueOf(val.trim());
+	}
+
+	static public boolean isTagSyncRangerCookieEnabled(Properties prop) {
+		String val = prop.getProperty(TAGSYNC_RANGER_COOKIE_ENABLED_PROP);
+		return val == null || Boolean.valueOf(val.trim());
 	}
 
 	static public String getTagSyncLogdir(Properties prop) {
@@ -397,6 +405,10 @@ public class TagSyncConfig extends Configuration {
 			}
 		}
 		return ret;
+	}
+
+	static public String getTagsyncKerberosIdentity(Properties prop) {
+		return prop.getProperty(TAGSYNC_KERBEROS_IDENTITY);
 	}
 
 	private TagSyncConfig() {

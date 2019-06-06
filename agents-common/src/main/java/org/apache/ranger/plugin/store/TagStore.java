@@ -34,6 +34,7 @@ public interface TagStore {
 
     void setServiceStore(ServiceStore svcStore);
 
+    ServiceStore getServiceStore();
 
     RangerTagDef createTagDef(RangerTagDef tagDef) throws Exception;
 
@@ -82,6 +83,8 @@ public interface TagStore {
     RangerServiceResource createServiceResource(RangerServiceResource resource) throws Exception;
 
     RangerServiceResource updateServiceResource(RangerServiceResource resource) throws Exception;
+
+    void refreshServiceResource(Long resourceId) throws Exception;
 
     void deleteServiceResource(Long id) throws Exception;
 

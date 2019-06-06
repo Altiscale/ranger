@@ -69,7 +69,6 @@
 					<include>org.apache.directory.api:api-util</include>
 					<include>org.apache.avro:avro</include>	
 					<include>commons-beanutils:commons-beanutils</include>
-					<include>commons-beanutils:commons-beanutils-core</include>
 					<include>commons-cli:commons-cli</include>
 					<include>commons-codec:commons-codec</include>
 					<include>org.apache.commons:commons-compress</include>
@@ -137,6 +136,7 @@
                 <outputDirectory>/ews/webapp/WEB-INF/classes/lib</outputDirectory>
                 <includes>
                     <include>org.apache.tomcat.embed:tomcat-embed*</include>
+                    <include>org.apache.tomcat:tomcat-annotations-api*</include>
                     <include>org.eclipse.jdt.core.compiler:ecj:jar:P20140317-1600</include>
                     <include>com.google.protobuf:protobuf-java:jar:${protobuf-java.version}</include>
 		    		<include>org.apache.hadoop:hadoop-hdfs:jar:${hadoop.version}</include>
@@ -165,7 +165,6 @@
                 <outputDirectory>/jisql/lib</outputDirectory>
                 <unpack>false</unpack>
 				<includes>
-                    <include>net.sourceforge.javacsv:javacsv</include>
                     <include>net.sf.jopt-simple:jopt-simple</include>
 				</includes>
             </dependencySet>
@@ -318,6 +317,8 @@
 			<include>exportKeysToJCEKS.sh</include>
 			<include>HSMMK2DB.sh</include>
 			<include>DBMK2HSM.sh</include>
+                        <include>DBMKTOKEYSECURE.sh</include>
+                        <include>KEYSECUREMKTOKMSDB.sh</include>
 		</includes>
 		<fileMode>544</fileMode>
 	</fileSet>

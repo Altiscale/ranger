@@ -111,9 +111,11 @@ import com.google.common.collect.MapMaker;
 import com.google.protobuf.RpcCallback;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.Service;
+import org.apache.ranger.plugin.util.RangerPerfTracer;
 
 public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocessorBase implements AccessControlService.Interface, CoprocessorService {
 	private static final Log LOG = LogFactory.getLog(RangerAuthorizationCoprocessor.class.getName());
+	private static final Log PERF_HBASEAUTH_REQUEST_LOG = RangerPerfTracer.getPerfLogger("hbaseauth.request");
 	private static boolean UpdateRangerPoliciesOnGrantRevoke = RangerHadoopConstants.HBASE_UPDATE_RANGER_POLICIES_ON_GRANT_REVOKE_DEFAULT_VALUE;
 	private static final String GROUP_PREFIX = "@";
 		
@@ -334,7 +336,7 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 			}
 			return result;
 		}
-		
+
 		// let's create a session that would be reused.  Set things on it that won't change.
 		HbaseAuditHandler auditHandler = _factory.getAuditHandler();
 		AuthorizationSession session = new AuthorizationSession(hbasePlugin)
@@ -402,47 +404,33 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 			if (columns == null || columns.isEmpty()) {
 				LOG.debug("evaluateAccess: columns collection null or empty, ok.  Family level access is desired.");
 				session.column(null) // zap stale column from prior iteration of this loop, if any
-					.buildRequest()
-					.authorize();
+						.buildRequest()
+						.authorize();
 				AuthzAuditEvent auditEvent = auditHandler.getAndDiscardMostRecentEvent(); // capture it only for success
 				if (session.isAuthorized()) {
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("evaluateAccess: has family level access [" + family + "]");
-					}
-					// we need to do 3 things: housekeeping, decide about audit events, building the results cache for filter
 					somethingIsAccessible = true;
-					familesAccessAllowed.add(family);
-					if (auditEvent != null) {
-						LOG.debug("evaluateAccess: adding to family-level-access-granted-event-set");
-						familyLevelAccessEvents.add(auditEvent);
-					}
-				} else {
-					everythingIsAccessible = false;
-					if (auditEvent != null && deniedEvent == null) { // we need to capture just one denial event
-						LOG.debug("evaluateAccess: Setting denied access audit event with last auth failure audit event.");
-						deniedEvent = auditEvent;
-					}
 					if (LOG.isDebugEnabled()) {
-						LOG.debug("evaluateAccess: no family level access [" + family + "].  Checking if has partial access (of any type)...");
+						LOG.debug("evaluateAccess: has family level access [" + family + "]. Checking if [" + family + "] descendants have access.");
 					}
-
 					session.resourceMatchingScope(RangerAccessRequest.ResourceMatchingScope.SELF_OR_DESCENDANTS)
 							.buildRequest()
 							.authorize();
 					auditEvent = auditHandler.getAndDiscardMostRecentEvent(); // capture it only for failure
 					if (session.isAuthorized()) {
 						if (LOG.isDebugEnabled()) {
-							LOG.debug("evaluateAccess: has partial access (of some type) in family [" + family + "]");
+							LOG.debug("evaluateAccess: [" + family + "] descendants have access");
 						}
-						// we need to do 3 things: housekeeping, decide about audit events, building the results cache for filter
-						somethingIsAccessible = true;
-						familesAccessIndeterminate.add(family);
+						familesAccessAllowed.add(family);
+						if (auditEvent != null) {
+							LOG.debug("evaluateAccess: adding to family-level-access-granted-event-set");
+							familyLevelAccessEvents.add(auditEvent);
+						}
 					} else {
 						if (LOG.isDebugEnabled()) {
-							LOG.debug("evaluateAccess: has no access of ["+ access + "] type in family [" + family + "]");
+							LOG.debug("evaluateAccess: has partial access (of some type) in family [" + family + "]");
 						}
-						familesAccessDenied.add(family);
-						denialReason = String.format("Insufficient permissions for user ‘%s',action: %s, tableName:%s, family:%s.", user.getName(), operation, table, family);
+						everythingIsAccessible = false;
+						familesAccessIndeterminate.add(family);
 						if (auditEvent != null && deniedEvent == null) { // we need to capture just one denial event
 							LOG.debug("evaluateAccess: Setting denied access audit event with last auth failure audit event.");
 							deniedEvent = auditEvent;
@@ -450,6 +438,17 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 					}
 					// Restore the headMatch setting
 					session.resourceMatchingScope(RangerAccessRequest.ResourceMatchingScope.SELF);
+				} else {
+					if (LOG.isDebugEnabled()) {
+						LOG.debug("evaluateAccess: has no access of [" + access + "] type in family [" + family + "]");
+					}
+					everythingIsAccessible = false;
+					familesAccessDenied.add(family);
+					denialReason = String.format("Insufficient permissions for user ‘%s',action: %s, tableName:%s, family:%s.", user.getName(), operation, table, family);
+					if (auditEvent != null && deniedEvent == null) { // we need to capture just one denial event
+						LOG.debug("evaluateAccess: Setting denied access audit event with last auth failure audit event.");
+						deniedEvent = auditEvent;
+					}
 				}
 			} else {
 				LOG.debug("evaluateAccess: columns collection not empty.  Skipping Family level check, will do finer level access check.");
@@ -505,7 +504,11 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("==> authorizeAccess");
 		}
+		RangerPerfTracer perf = null;
+
 		try {
+			perf = RangerPerfTracer.getPerfTracer(PERF_HBASEAUTH_REQUEST_LOG, "RangerAuthorizationCoprocessor.authorizeAccess(request=Operation[" + operation + "]");
+
 			ColumnFamilyAccessResult accessResult = evaluateAccess(operation, action, env, familyMap);
 			RangerDefaultAuditHandler auditHandler = new RangerDefaultAuditHandler();
 			if (accessResult._everythingIsAccessible) {
@@ -525,6 +528,7 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 				throw new AccessDeniedException(accessResult._denialReason);
 			}
 		} finally {
+			RangerPerfTracer.log(perf);
 			if (LOG.isDebugEnabled()) {
 				LOG.debug("<== authorizeAccess");
 			}
@@ -542,17 +546,26 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 	void requirePermission(final String operation, final Action action, final RegionCoprocessorEnvironment regionServerEnv, final Map<byte[], ? extends Collection<?>> familyMap)
 			throws AccessDeniedException {
 
-		ColumnFamilyAccessResult accessResult = evaluateAccess(operation, action, regionServerEnv, familyMap);
-		RangerDefaultAuditHandler auditHandler = new RangerDefaultAuditHandler();
-		if (accessResult._everythingIsAccessible) {
-			auditHandler.logAuthzAudits(accessResult._accessAllowedEvents);
-			auditHandler.logAuthzAudits(accessResult._familyLevelAccessEvents);
-			LOG.debug("requirePermission: exiting: all access was allowed");
-			return;
-		} else {
-			auditHandler.logAuthzAudit(accessResult._accessDeniedEvent);
-			LOG.debug("requirePermission: exiting: throwing exception as everything wasn't accessible");
-			throw new AccessDeniedException(accessResult._denialReason);
+		RangerPerfTracer perf = null;
+
+		try {
+			if (RangerPerfTracer.isPerfTraceEnabled(PERF_HBASEAUTH_REQUEST_LOG)) {
+				perf = RangerPerfTracer.getPerfTracer(PERF_HBASEAUTH_REQUEST_LOG, "RangerAuthorizationCoprocessor.requirePermission(request=Operation[" + operation + "]");
+			}
+			ColumnFamilyAccessResult accessResult = evaluateAccess(operation, action, regionServerEnv, familyMap);
+			RangerDefaultAuditHandler auditHandler = new RangerDefaultAuditHandler();
+			if (accessResult._everythingIsAccessible) {
+				auditHandler.logAuthzAudits(accessResult._accessAllowedEvents);
+				auditHandler.logAuthzAudits(accessResult._familyLevelAccessEvents);
+				LOG.debug("requirePermission: exiting: all access was allowed");
+				return;
+			} else {
+				auditHandler.logAuthzAudit(accessResult._accessDeniedEvent);
+				LOG.debug("requirePermission: exiting: throwing exception as everything wasn't accessible");
+				throw new AccessDeniedException(accessResult._denialReason);
+			}
+		} finally {
+			RangerPerfTracer.log(perf);
 		}
 	}
 	
@@ -796,7 +809,7 @@ public class RangerAuthorizationCoprocessor extends RangerAuthorizationCoprocess
 	}
 	@Override
 	public void preDeleteSnapshot(ObserverContext<MasterCoprocessorEnvironment> ctx, SnapshotDescription snapshot) throws IOException {
-		requirePermission("deleteSnapshot", Permission.Action.ADMIN);
+		requirePermission("deleteSnapshot", snapshot.getTableBytes().toByteArray(), Permission.Action.ADMIN);
 	}
 	@Override
 	public void preDeleteTable(ObserverContext<MasterCoprocessorEnvironment> c, TableName tableName) throws IOException {

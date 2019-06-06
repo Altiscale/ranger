@@ -31,6 +31,7 @@ import org.apache.ranger.plugin.model.RangerPolicy;
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.model.RangerPolicy.RangerPolicyResource;
 import org.apache.ranger.plugin.policyevaluator.RangerPolicyEvaluator;
+import org.apache.ranger.plugin.policyresourcematcher.RangerPolicyResourceMatcher;
 import org.apache.ranger.plugin.util.RangerAccessRequestUtil;
 import org.apache.ranger.plugin.util.RangerPerfTracer;
 import org.apache.ranger.plugin.util.ServicePolicies;
@@ -296,7 +297,9 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 		RangerPerfTracer perf = null;
 
 		if(RangerPerfTracer.isPerfTraceEnabled(PERF_POLICYENGINE_REQUEST_LOG)) {
-			perf = RangerPerfTracer.getPerfTracer(PERF_POLICYENGINE_REQUEST_LOG, "RangerPolicyEngine.isAccessAllowed(requestHashCode=" + Integer.toHexString(System.identityHashCode(request)) + ")");
+			String requestHashCode = Integer.toHexString(System.identityHashCode(request));
+			perf = RangerPerfTracer.getPerfTracer(PERF_POLICYENGINE_REQUEST_LOG, "RangerPolicyEngine.isAccessAllowed(requestHashCode=" + requestHashCode + ")");
+			LOG.info("RangerPolicyEngineImpl.isAccessAllowed(" + requestHashCode + ", " + request + ")");
 		}
 
 		RangerAccessResult ret = isAccessAllowedNoAudit(request);
@@ -417,7 +420,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 		}
 		boolean ret = false;
 
-		for (RangerPolicyEvaluator evaluator : policyRepository.getPolicyEvaluators(resource)) {
+		for (RangerPolicyEvaluator evaluator : policyRepository.getLikelyMatchPolicyEvaluators(resource)) {
 			ret = evaluator.isAccessAllowed(resource, user, userGroups, accessType);
 
 			if (ret) {
@@ -543,6 +546,66 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 	}
 
 	@Override
+	public List<RangerPolicy> getMatchingPolicies(RangerAccessResource resource) {
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("==> RangerPolicyEngineImpl.getMatchingPolicies(" + resource + ")");
+		}
+
+		List<RangerPolicy> ret = new ArrayList<>();
+
+		RangerAccessRequestImpl request = new RangerAccessRequestImpl(resource, RangerPolicyEngine.ANY_ACCESS, null, null);
+
+		preProcess(request);
+
+		if (hasTagPolicies()) {
+			Set<RangerTagForEval> tags = RangerAccessRequestUtil.getRequestTagsFromContext(request.getContext());
+
+			if (CollectionUtils.isNotEmpty(tags)) {
+				for (RangerTagForEval tag : tags) {
+					RangerAccessRequest         tagEvalRequest            = new RangerTagAccessRequest(tag, tagPolicyRepository.getServiceDef(), request);
+					RangerAccessResource        tagResource               = tagEvalRequest.getResource();
+					List<RangerPolicyEvaluator> accessPolicyEvaluators    = tagPolicyRepository.getLikelyMatchPolicyEvaluators(tagResource);
+					List<RangerPolicyEvaluator> dataMaskPolicyEvaluators  = tagPolicyRepository.getLikelyMatchDataMaskPolicyEvaluators(tagResource);
+					List<RangerPolicyEvaluator> rowFilterPolicyEvaluators = tagPolicyRepository.getLikelyMatchRowFilterPolicyEvaluators(tagResource);
+
+					List<RangerPolicyEvaluator>[] likelyEvaluators = new List[] { accessPolicyEvaluators, dataMaskPolicyEvaluators, rowFilterPolicyEvaluators };
+
+					for (List<RangerPolicyEvaluator> evaluators : likelyEvaluators) {
+						for (RangerPolicyEvaluator evaluator : evaluators) {
+							RangerPolicyResourceMatcher matcher = evaluator.getPolicyResourceMatcher();
+							if (matcher != null && matcher.isMatch(tagResource, RangerPolicyResourceMatcher.MatchScope.SELF_OR_ANCESTOR_OR_DESCENDANT, null)) {
+								ret.add(evaluator.getPolicy());
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if (hasResourcePolicies()) {
+			List<RangerPolicyEvaluator> accessPolicyEvaluators    = policyRepository.getLikelyMatchPolicyEvaluators(resource);
+			List<RangerPolicyEvaluator> dataMaskPolicyEvaluators  = policyRepository.getLikelyMatchDataMaskPolicyEvaluators(resource);
+			List<RangerPolicyEvaluator> rowFilterPolicyEvaluators = policyRepository.getLikelyMatchRowFilterPolicyEvaluators(resource);
+
+			List<RangerPolicyEvaluator>[] likelyEvaluators = new List[] { accessPolicyEvaluators, dataMaskPolicyEvaluators, rowFilterPolicyEvaluators };
+
+			for (List<RangerPolicyEvaluator> evaluators : likelyEvaluators) {
+				for (RangerPolicyEvaluator evaluator : evaluators) {
+					RangerPolicyResourceMatcher matcher = evaluator.getPolicyResourceMatcher();
+					if (matcher != null && matcher.isMatch(resource, RangerPolicyResourceMatcher.MatchScope.SELF_OR_ANCESTOR_OR_DESCENDANT, null)) {
+						ret.add(evaluator.getPolicy());
+					}
+				}
+			}
+		}
+
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("<== RangerPolicyEngineImpl.getMatchingPolicies(" + resource + ") : " + ret.size());
+		}
+		return ret;
+	}
+
+	@Override
 	public RangerResourceAccessInfo getResourceAccessInfo(RangerAccessRequest request) {
 		if(LOG.isDebugEnabled()) {
 			LOG.debug("==> RangerPolicyEngineImpl.getResourceAccessInfo(" + request + ")");
@@ -558,7 +621,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 				for (RangerTagForEval tag : tags) {
 					RangerAccessRequest tagEvalRequest = new RangerTagAccessRequest(tag, tagPolicyRepository.getServiceDef(), request);
 
-					List<RangerPolicyEvaluator> evaluators = tagPolicyRepository.getPolicyEvaluators(tagEvalRequest.getResource());
+					List<RangerPolicyEvaluator> evaluators = tagPolicyRepository.getLikelyMatchPolicyEvaluators(tagEvalRequest.getResource());
 
 					for (RangerPolicyEvaluator evaluator : evaluators) {
 						evaluator.getResourceAccessInfo(tagEvalRequest, ret);
@@ -567,7 +630,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 			}
 		}
 
-		List<RangerPolicyEvaluator> resPolicyEvaluators = policyRepository.getPolicyEvaluators(request.getResource());
+		List<RangerPolicyEvaluator> resPolicyEvaluators = policyRepository.getLikelyMatchPolicyEvaluators(request.getResource());
 
 		if(CollectionUtils.isNotEmpty(resPolicyEvaluators)) {
 			for (RangerPolicyEvaluator evaluator : resPolicyEvaluators) {
@@ -615,7 +678,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 					ret.setIsAccessDetermined(false); // discard allowed result by tag-policies, to evaluate resource policies for possible deny
 				}
 
-				List<RangerPolicyEvaluator> evaluators = policyRepository.getPolicyEvaluators(request.getResource());
+				List<RangerPolicyEvaluator> evaluators = policyRepository.getLikelyMatchPolicyEvaluators(request.getResource());
 				for (RangerPolicyEvaluator evaluator : evaluators) {
 					ret.incrementEvaluatedPoliciesCount();
 					evaluator.evaluate(request, ret);
@@ -673,7 +736,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 					}
 					tagEvalResult.setAuditResultFrom(result);
 
-					List<RangerPolicyEvaluator> evaluators = tagPolicyRepository.getPolicyEvaluators(tagEvalRequest.getResource());
+					List<RangerPolicyEvaluator> evaluators = tagPolicyRepository.getLikelyMatchPolicyEvaluators(tagEvalRequest.getResource());
 
 					for (RangerPolicyEvaluator evaluator : evaluators) {
 						result.incrementEvaluatedPoliciesCount();
@@ -751,7 +814,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 			if (evaluateResourcePolicies) {
 				boolean                     findAuditByResource = !ret.getIsAuditedDetermined();
 				boolean                     foundInCache        = findAuditByResource && policyRepository.setAuditEnabledFromCache(request, ret);
-				List<RangerPolicyEvaluator> evaluators          = policyRepository.getDataMaskPolicyEvaluators(request.getResource());
+				List<RangerPolicyEvaluator> evaluators          = policyRepository.getLikelyMatchDataMaskPolicyEvaluators(request.getResource());
 
 				for (RangerPolicyEvaluator evaluator : evaluators) {
 					ret.incrementEvaluatedPoliciesCount();
@@ -789,7 +852,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 
 		if (CollectionUtils.isNotEmpty(tagEvaluators)) {
 			Set<RangerTagForEval>       tags               = RangerAccessRequestUtil.getRequestTagsFromContext(request.getContext());
-			List<PolicyEvaluatorForTag> dataMaskEvaluators = tagPolicyRepository.getDataMaskPolicyEvaluators(tags);
+			List<PolicyEvaluatorForTag> dataMaskEvaluators = tagPolicyRepository.getLikelyMatchDataMaskPolicyEvaluators(tags);
 
 			if (CollectionUtils.isNotEmpty(dataMaskEvaluators)) {
 				for (PolicyEvaluatorForTag dataMaskEvaluator : dataMaskEvaluators) {
@@ -862,7 +925,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 			if (evaluateResourcePolicies) {
 				boolean                     findAuditByResource = !ret.getIsAuditedDetermined();
 				boolean                     foundInCache        = findAuditByResource && policyRepository.setAuditEnabledFromCache(request, ret);
-				List<RangerPolicyEvaluator> evaluators          = policyRepository.getRowFilterPolicyEvaluators(request.getResource());
+				List<RangerPolicyEvaluator> evaluators          = policyRepository.getLikelyMatchRowFilterPolicyEvaluators(request.getResource());
 
 				for (RangerPolicyEvaluator evaluator : evaluators) {
 					ret.incrementEvaluatedPoliciesCount();
@@ -894,7 +957,7 @@ public class RangerPolicyEngineImpl implements RangerPolicyEngine {
 
 		if (CollectionUtils.isNotEmpty(tagEvaluators)) {
 			Set<RangerTagForEval>       tags                = RangerAccessRequestUtil.getRequestTagsFromContext(request.getContext());
-			List<PolicyEvaluatorForTag> rowFilterEvaluators = tagPolicyRepository.getRowFilterPolicyEvaluators(tags);
+			List<PolicyEvaluatorForTag> rowFilterEvaluators = tagPolicyRepository.getLikelyMatchRowFilterPolicyEvaluators(tags);
 
 			if (CollectionUtils.isNotEmpty(rowFilterEvaluators)) {
 				for (PolicyEvaluatorForTag rowFilterEvaluator : rowFilterEvaluators) {

@@ -40,14 +40,6 @@ public class buildks {
 						buildksOBJ.createCredential(args);
 					}else if(command.equalsIgnoreCase("list")){
 						buildksOBJ.listCredential(args);
-					}else if(command.equalsIgnoreCase("get")){
-						String credential=buildksOBJ.getCredential(args);
-						if(credential!=null){
-							System.out.println(credential);
-							System.exit(0);
-						}else{
-							System.exit(1);
-						}
 					}else{
 						System.out.println(command +" is not supported in current version of CredentialBuilder API.");
 						System.exit(1);
@@ -535,7 +527,7 @@ public class buildks {
 			}
 			if(keystore!=null && !keystore.isEmpty()){
 				File file =new File(keystore);
-				if(file!=null && file.length()==0){
+				if(file!=null && file.exists() && file.length()==0){
 					System.out.println("Provider file '"+keystore+"' is in invalid state or corrupt!! will try to delete first.");
 					file.delete();
 					file=null;

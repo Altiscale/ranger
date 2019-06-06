@@ -21,7 +21,6 @@ package org.apache.ranger.plugin.model.validation;
 
 
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -34,7 +33,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.ranger.plugin.model.RangerPolicy;
-import org.apache.ranger.plugin.model.RangerPolicy.RangerPolicyResource;
 import org.apache.ranger.plugin.model.RangerService;
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerAccessTypeDef;
@@ -43,12 +41,9 @@ import org.apache.ranger.plugin.model.RangerServiceDef.RangerResourceDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerServiceConfigDef;
 import org.apache.ranger.plugin.model.validation.RangerValidator.Action;
 import org.apache.ranger.plugin.store.ServiceStore;
-import org.apache.ranger.plugin.util.SearchFilter;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import com.google.common.collect.Maps;
 
 public class TestRangerValidator {
 
@@ -272,8 +267,8 @@ public class TestRangerValidator {
 		Assert.assertEquals(4, accessTypes.size());
 		Assert.assertTrue(accessTypes.contains("a"));
 		Assert.assertTrue(accessTypes.contains("b "));
-		Assert.assertTrue(accessTypes.contains(" c"));
-		Assert.assertTrue(accessTypes.contains("	d	"));
+		Assert.assertTrue(accessTypes.contains(" C"));
+		Assert.assertTrue(accessTypes.contains("	D	"));
 	}
 	
 	@Test
@@ -361,36 +356,6 @@ public class TestRangerValidator {
 	}
 
 	@Test
-	public void test_getPolicyResources() {
-		
-		Set<String> result;
-		RangerPolicy policy = null;
-		// null policy
-		result = _validator.getPolicyResources(null);
-		Assert.assertTrue(result != null);
-		Assert.assertTrue(result.isEmpty());
-		// null resource map
-		policy = mock(RangerPolicy.class);
-		when(policy.getResources()).thenReturn(null);
-		result = _validator.getPolicyResources(null);
-		Assert.assertTrue(result != null);
-		Assert.assertTrue(result.isEmpty());
-		// empty resource map
-		Map<String, RangerPolicyResource> input = Maps.newHashMap();
-		when(policy.getResources()).thenReturn(input);
-		result = _validator.getPolicyResources(policy);
-		Assert.assertTrue(result != null);
-		Assert.assertTrue(result.isEmpty());
-		// known resource map
-		input.put("r1", mock(RangerPolicyResource.class));
-		input.put("R2", mock(RangerPolicyResource.class));
-		result = _validator.getPolicyResources(policy);
-		Assert.assertEquals(2, result.size());
-		Assert.assertTrue("r1", result.contains("r1"));
-		Assert.assertTrue("R2", result.contains("r2")); // result should lowercase the resource-names
-	}
-
-	@Test
 	public void test_getIsAuditEnabled() {
 		// null policy
 		RangerPolicy policy = null;
@@ -409,42 +374,6 @@ public class TestRangerValidator {
 		when(policy.getIsAuditEnabled()).thenReturn(Boolean.TRUE);
 		result = _validator.getIsAuditEnabled(policy);
 		Assert.assertTrue(result);
-	}
-
-	@Test
-	public void test_getPolicies() throws Exception {
-
-		// returns null when store returns null
-		String policyName = "aPolicy";
-		String serviceName = "aService";
-		SearchFilter filter = new SearchFilter();
-		filter.setParam(SearchFilter.POLICY_NAME, policyName);
-		filter.setParam(SearchFilter.SERVICE_NAME, serviceName);
-		
-		when(_store.getPolicies(filter)).thenReturn(null);
-		List<RangerPolicy> result = _validator.getPolicies(serviceName, policyName);
-		// validate store is queried with both parameters
-		verify(_store).getPolicies(filter);
-		Assert.assertNull(result);
-
-		// returns null if store throws an exception
-		when(_store.getPolicies(filter)).thenThrow(new Exception());
-		result = _validator.getPolicies(serviceName, policyName);
-		Assert.assertNull(result);
-		
-		// does not shove policy into search filter if policy name passed in is "blank"
-		filter = new SearchFilter();
-		filter.setParam(SearchFilter.SERVICE_NAME, serviceName);
-
-		List<RangerPolicy> policies = new ArrayList<RangerPolicy>();
-		RangerPolicy policy = mock(RangerPolicy.class);
-		policies.add(policy);
-		
-		when(_store.getPolicies(filter)).thenReturn(policies);
-		for (String aName : new String[]{ null, "", "  "}) {
-			result = _validator.getPolicies(serviceName, aName);
-			Assert.assertTrue(result.iterator().next() == policy);
-		}
 	}
 	
 	@Test

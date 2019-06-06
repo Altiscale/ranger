@@ -128,10 +128,10 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 	}
 	
 	public List<XXTrxLog> getTransactionLog(RangerPolicy vPolicy, int action) {
-		return getTransactionLog(vPolicy, null, action);
+		return getTransactionLog(vPolicy, null, null, action);
 	}
 
-	public List<XXTrxLog> getTransactionLog(RangerPolicy vObj, XXPolicy mObj, int action) {
+	public List<XXTrxLog> getTransactionLog(RangerPolicy vObj, XXPolicy mObj, RangerPolicy oldPolicy, int action) {
 		if (vObj == null || action == 0 || (action == OPERATION_UPDATE_CONTEXT && mObj == null)) {
 			return null;
 		}
@@ -147,7 +147,7 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 				if (!trxLogAttrs.containsKey(field.getName())) {
 					continue;
 				}
-				XXTrxLog xTrxLog = processFieldToCreateTrxLog(field, objectName, nameField, vObj, mObj, action);
+				XXTrxLog xTrxLog = processFieldToCreateTrxLog(field, objectName, nameField, vObj, mObj, oldPolicy, action);
 				if (xTrxLog != null) {
 					trxLogList.add(xTrxLog);
 				}
@@ -156,8 +156,8 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 			Field[] superClassFields = vObj.getClass().getSuperclass()
 					.getDeclaredFields();
 			for (Field field : superClassFields) {
-				if (field.getName().equalsIgnoreCase("isEnabled")) {
-					XXTrxLog xTrx = processFieldToCreateTrxLog(field, objectName, nameField, vObj, mObj, action);
+				if ("isEnabled".equalsIgnoreCase(field.getName())) {
+					XXTrxLog xTrx = processFieldToCreateTrxLog(field, objectName, nameField, vObj, mObj, oldPolicy, action);
 					if (xTrx != null) {
 						trxLogList.add(xTrx);
 					}
@@ -174,7 +174,7 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 	}
 	
 	private XXTrxLog processFieldToCreateTrxLog(Field field, String objectName,
-			Field nameField, RangerPolicy vObj, XXPolicy mObj, int action) {
+			Field nameField, RangerPolicy vObj, XXPolicy mObj, RangerPolicy oldPolicy, int action) {
 
 		String actionString = "";
 
@@ -228,10 +228,10 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 			} else if (fieldName.equalsIgnoreCase(ROWFILTER_POLICY_ITEM_CLASS_FIELD_NAME)) {
 				value = processRowFilterPolicyItemForTrxLog(field.get(vObj));
 			} else if (fieldName.equalsIgnoreCase(IS_ENABLED_CLASS_FIELD_NAME)) {
-				value = String.valueOf(processIsEnabledClassFieldNameForTrxLog(field.get(vObj)));
-			
-			}
-			else {
+                                value = processIsEnabledClassFieldNameForTrxLog(field.get(vObj));
+                        } else if (fieldName.equalsIgnoreCase(IS_AUDIT_ENABLED_CLASS_FIELD_NAME)) {
+                                value = processIsAuditEnabledClassFieldNameForTrxLog(field.get(vObj));
+                        } else {
 				value = "" + field.get(vObj);
 			}
 
@@ -260,8 +260,7 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 						break;
 					}
 				}
-				RangerPolicy oldPolicy = populateViewBean(mObj);
-				if (fieldName.equalsIgnoreCase(POLICY_RESOURCE_CLASS_FIELD_NAME)) {
+				if (POLICY_RESOURCE_CLASS_FIELD_NAME.equalsIgnoreCase(fieldName)) {
 					if (oldPolicy != null) {
 						oldValue = processPolicyResourcesForTrxLog(oldPolicy.getResources());
 					}
@@ -319,7 +318,11 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 					}
 				}else if (fieldName.equalsIgnoreCase(IS_ENABLED_CLASS_FIELD_NAME)) {
 					if (oldPolicy != null) {
-						oldValue = String.valueOf(processIsEnabledClassFieldNameForTrxLog(oldPolicy.getIsEnabled()));
+                                                oldValue = processIsEnabledClassFieldNameForTrxLog(oldPolicy.getIsEnabled());
+                                        }
+                                } else if(fieldName.equalsIgnoreCase(IS_AUDIT_ENABLED_CLASS_FIELD_NAME)) {
+                                        if (oldPolicy != null) {
+                                                oldValue = processIsAuditEnabledClassFieldNameForTrxLog(oldPolicy.getIsAuditEnabled());
 					}
 				}
 				if (oldValue == null || oldValue.equalsIgnoreCase(value)) {
@@ -577,6 +580,13 @@ public class RangerPolicyService extends RangerPolicyServiceBase<XXPolicy, Range
 		String isEnabled= String.valueOf(value);
 			return isEnabled;
 	}
+
+        private String processIsAuditEnabledClassFieldNameForTrxLog(Object value) {
+                if(value == null)
+                        return null;
+                String isAuditEnabled = String.valueOf(value);
+                return isAuditEnabled;
+        }
 
 	private boolean compareTwoDataMaskingPolicyItemList(String value, String oldValue) {
 		if (value == null && oldValue == null) {

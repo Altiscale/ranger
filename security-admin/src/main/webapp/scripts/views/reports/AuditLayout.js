@@ -320,15 +320,25 @@ define(function(require) {
 						
 						switch (facet) {
 							case 'Service Name':
-								var serviceList 	= new RangerServiceList();
+								var serviceList 	= new RangerServiceList() , serviceNameVal = [];
 								serviceList.setPageSize(100);
 								serviceList.fetch().done(function(){
-									callback(serviceList.map(function(model){return model.get('name');}));
+								serviceList.each(function(m){
+									if(m.get('type') !== XAEnums.ServiceType.SERVICE_TAG.label){
+										serviceNameVal.push(m.get('name'));
+									};
+								});
+								callback(serviceNameVal);
 								});
 								break;
 							case 'Service Type':
-								var serviceList =  that.serviceDefList.map(function(serviceDef){ return {'label' : serviceDef.get('name').toUpperCase(), 'value' : serviceDef.get('name').toUpperCase()}; })
-								callback(serviceList);
+								var serviveDefs = [];
+								that.serviceDefList.each(function(m){
+									if(m.get('name').toUpperCase() != (XAEnums.ServiceType.SERVICE_TAG.label).toUpperCase()){
+										serviveDefs.push({ 'label' : m.get('name').toUpperCase(), 'value' : m.get('name').toUpperCase() });
+									}
+								});
+								callback(serviveDefs);
 								break;
 							case 'Result':
 				                callback(XAUtils.hackForVSLabelValuePairs(XAEnums.AccessResult));
@@ -360,11 +370,11 @@ define(function(require) {
 			var that = this;
 			var searchOpt = ["Audit Type", "User", "Actions", "Session Id", "Start Date", "End Date"];
 			var serverAttrName  = [{text : "Audit Type", label :"objectClassType",'multiple' : true, 'optionsArr' : XAUtils.enumToSelectLabelValuePairs(XAEnums.ClassTypes)},
-			                       {text : "User", label :"owner"},
-			                       {text : "Actions", label :"action"},{text :  "Session Id", label :"sessionId"},
-			                       {text : 'Start Date',label :'startDate'},{text : 'End Date',label :'endDate'} ];
+                                               {text : "User", label :"owner"}, {text :  "Session Id", label :"sessionId"},
+                                               {text : 'Start Date',label :'startDate'},{text : 'End Date',label :'endDate'},
+                                               {text : "Actions", label :"action",'multiple' : true, 'optionsArr' : XAUtils.enumToSelectLabelValuePairs(XAGlobals.ActionType)},];
 			
-			var auditList = [],query = '';
+                        var auditList = [],query = '', actionTypeList = [];
 			_.each(XAEnums.ClassTypes, function(obj){
 				if((obj.value == XAEnums.ClassTypes.CLASS_TYPE_XA_ASSET.value) 
 						|| (obj.value == XAEnums.ClassTypes.CLASS_TYPE_XA_RESOURCE.value) 
@@ -374,6 +384,11 @@ define(function(require) {
 						|| (obj.value == XAEnums.ClassTypes.CLASS_TYPE_XA_GROUP.value))
 					auditList.push({label :obj.label, value :obj.label+''});
 			});
+			_.each(XAGlobals.ActionType, function(obj){
+				if(obj.label){
+					actionTypeList.push({label :obj.label, value :obj.label})
+				}
+			})
 			if(!_.isUndefined(App.sessionId)){
                                 App.vsHistory.admin = [] ;
 				query = '"Session Id": "'+App.sessionId+'"';
@@ -394,7 +409,7 @@ define(function(require) {
 										callback(auditList);
 										break;
 									case 'Actions':
-										callback(["Create","Update","Delete","Password Change","Export Json","Export Csv","Export Excel","Import End","Import Start"]);
+										callback(actionTypeList);
 										break;
 									case 'Start Date' :
 											var endDate, models = that.visualSearch.searchQuery.where({category:"End Date"});
@@ -609,7 +624,14 @@ define(function(require) {
 					
 					var fullTrxLogListForTrxId = new VXTrxLogList();
 					fullTrxLogListForTrxId.getFullTrxLogListForTrxId(this.model.get('transactionId'),{
-						cache : false
+                                                cache : false,
+                                                error : function(response , error){
+                                                        if (response && response.status === 419 ) {
+                                                                XAUtils.defaultErrorHandler(error , response);
+                                                        } else {
+                                                                XAUtils.showErrorMsg(response.responseJSON.msgDesc);
+                                                        }
+                                                }
 					}).done(function(coll,mm){
 						XAUtils.blockUI('unblock');
 						fullTrxLogListForTrxId = new VXTrxLogList(coll.vXTrxLogs);
@@ -726,9 +748,9 @@ define(function(require) {
 								hasAction = ["EXPORT JSON", "EXPORT EXCEL", "EXPORT CSV", "IMPORT START", "IMPORT END"];
 							if($.inArray(action,hasAction)>=0){
 								if(action == "EXPORT JSON" || action == "EXPORT EXCEL" || action == "EXPORT CSV")
-									return html = 	'Exported policies';
+                                                                        return 'Exported policies';
 								else
-									return html = 	action;
+                                                                        return action;
 							} else{	
 								 if(rawValue == XAEnums.ClassTypes.CLASS_TYPE_XA_ASSET.value || rawValue == XAEnums.ClassTypes.CLASS_TYPE_RANGER_SERVICE.value)
 								 	 html = 	'Service '+action+'d '+'<b>'+name+'</b>';
@@ -835,19 +857,18 @@ define(function(require) {
 					Backgrid.Row.prototype.initialize.apply(this, args);
 				},
 				onClick: function (e) {
-					var self = this;
-                                        if($(e.target).hasClass('tagsColumn') || $(e.target).closest('td').hasClass("tagsColumn")){
-                                                return;
-                                        }
+                    var self = this ;
+                    if($(e.target).hasClass('tagsColumn') || $(e.target).closest('td').hasClass("tagsColumn")){
+                            return;
+                    }
+                    if(this.model.get('repoType')){
+			var repoType =  this.model.get('repoType');
+                    }
 					var policyId = this.model.get('policyId');
 					if(policyId == -1){
 						return;
 					}
-					var	serviceDef = that.serviceDefList.findWhere({'id':this.model.get('repoType')});
-					if(_.isUndefined(serviceDef)){
-						return ;
-					}
-					var eventTime = this.model.get('eventTime');
+                    var eventTime = this.model.get('eventTime');
 
 					var policy = new RangerPolicy({
 						id: policyId
@@ -856,17 +877,19 @@ define(function(require) {
 					var view = new RangerPolicyRO({
 						policy: policy,
 						policyVersionList : policyVersionList,
-						serviceDef: serviceDef,
-						eventTime : eventTime
+                                                serviceDefList: that.serviceDefList,
+                                                eventTime : eventTime,
+                                                repoType : repoType
 					});
 					var modal = new Backbone.BootstrapModal({
 						animate : true, 
 						content		: view,
 						title: localization.tt("h.policyDetails"),
 						okText :localization.tt("lbl.ok"),
-						allowCancel : false,
+                                                allowCancel : true,
 						escape : true
 					}).open();
+                                        modal.$el.find('.cancel').hide();
 					var policyVerEl = modal.$el.find('.modal-footer').prepend('<div class="policyVer pull-left"></div>').find('.policyVer');
 					policyVerEl.append('<i id="preVer" class="icon-chevron-left '+ ((policy.get('version')>1) ? 'active' : '') +'"></i><text>Version '+ policy.get('version') +'</text>').find('#preVer').click(function(e){
 						view.previousVer(e);
@@ -945,7 +968,7 @@ define(function(require) {
 						formatter: _.extend({}, Backgrid.CellFormatter.prototype, {
 							fromRaw: function (rawValue, model) {
 								return '<div title="'+rawValue+'">'+_.escape(rawValue)+'</div>\
-								<div title="'+model.get('serviceType')+'" style="border-top: 1px solid #ddd;">'+_.escape(model.get('serviceType'))+'</div>';;
+                                                                <div title="'+model.get('serviceType')+'" style="border-top: 1px solid #ddd;">'+_.escape(model.get('serviceType'))+'</div>';
 							}
 						})
 					},
