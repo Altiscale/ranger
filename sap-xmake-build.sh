@@ -13,7 +13,6 @@ export JAVA_HOME=/opt/sapjvm_7
 export FORREST_HOME=/opt/apache-forrest
 export PATH=$M2_HOME/bin:$JAVA_HOME/bin:/opt/apache-ant/bin:$PATH
 
-
 #------------------------------------------------------------------------------
 #
 #  ***** compile and package pig *****
@@ -30,7 +29,7 @@ echo "Run UT = ${RUN_UNIT_TESTS}"
 if [ "$RUN_UNIT_TESTS" == "true" ]; then
   mvn clean install assembly:assembly
 else
-  mvn -DskipTests -Drat.ignoreErrors=true clean install assembly:assembly
+  mvn -DskipTests -X -Drat.ignoreErrors=true clean install assembly:assembly
 fi
 
 cat /gen/src/target/rat.txt
