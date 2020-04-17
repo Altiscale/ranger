@@ -179,7 +179,7 @@
         <mysql-connector-java.version>5.1.31</mysql-connector-java.version>
         <netty.version>3.6.2.Final</netty.version>
         <noggit.version>0.6</noggit.version>
-        <owasp-java-html-sanitizer.version>r239</owasp-java-html-sanitizer.version>
+        <owasp-java-html-sanitizer.version>20191001.1</owasp-java-html-sanitizer.version>
         <paranamer.version>2.3</paranamer.version>
         <poi.version>3.17</poi.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
