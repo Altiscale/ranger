@@ -38,7 +38,7 @@ fi
 #------------------------------------------------------------------------------
 DATE_STRING=`date +%Y%m%d%H%M%S`
 GIT_REPO="https://github.com/Altiscale/ranger"
-ALTISCALE_RELEASE=${ALTISCALE_RELEASE:-0.1.0}
+ALTISCALE_RELEASE=${ALTISCALE_RELEASE:-5.0.0}
 
 # convert the tarball into an RPM
 #create the installation directory (to stage artifacts)
@@ -104,8 +104,6 @@ ${CONFIG_FILES} \
 -C ${INSTALL_DIR} \
 opt etc usr
 
-find . -iname "*rpm"
-#mv "${RPM_DIR}"/"${RPM_NAME}-${ALTISCALE_RELEASE}-${DATE_STRING}.x86_64.rpm" "${RPM_DIR}"/"alti-ranger-${ARTIFACT_VERSION}-SNAPSHOT.rpm"
 mv "${RPM_DIR}"/"${RPM_NAME}"-"${ALTISCALE_RELEASE}"-"${DATE_STRING}".x86_64.rpm "${RPM_DIR}"/alti-ranger-"${XMAKE_PROJECT_VERSION}".rpm
 
 exit 0
