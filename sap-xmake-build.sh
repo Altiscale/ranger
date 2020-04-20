@@ -104,5 +104,8 @@ ${CONFIG_FILES} \
 -C ${INSTALL_DIR} \
 opt etc usr
 
-mv "${RPM_DIR}${RPM_NAME}-${ALTISCALE_RELEASE}-${DATE_STRING}.x86_64.rpm" "${RPM_DIR}alti-ranger-${ARTIFACT_VERSION}-SNAPSHOT.rpm"
+find . -iname "*rpm"
+#mv "${RPM_DIR}"/"${RPM_NAME}-${ALTISCALE_RELEASE}-${DATE_STRING}.x86_64.rpm" "${RPM_DIR}"/"alti-ranger-${ARTIFACT_VERSION}-SNAPSHOT.rpm"
+mv "${RPM_DIR}"/"${RPM_NAME}"-"${ALTISCALE_RELEASE}"-"${DATE_STRING}".x86_64.rpm "${RPM_DIR}"/alti-tez-"${XMAKE_PROJECT_VERSION}".rpm
+
 exit 0
